@@ -67,13 +67,13 @@ func (e *Editor) InputHandler() func(event *tcell.EventKey, setFocus func(p tvie
 		case tcell.KeyRune:
 			text := string(event.Rune())
 			e.ReplaceText(text, e.currentGraphemeIndex, e.currentGraphemeIndex)
-			e.MoveCursorRight()
+			e.currentGraphemeIndex++
 		case tcell.KeyEnter:
 			e.ReplaceText("\n", e.currentGraphemeIndex, e.currentGraphemeIndex)
-			e.MoveCursorDown()
+			e.currentGraphemeIndex++
 		case tcell.KeyBackspace, tcell.KeyBackspace2:
-			e.currentGraphemeIndex--
 			e.ReplaceText("", e.currentGraphemeIndex-1, e.currentGraphemeIndex)
+			e.currentGraphemeIndex--
 		}
 	})
 }
@@ -224,6 +224,8 @@ func (e *Editor) ReplaceText(s string, fromGraphemeIndex, untilGraphemeIndex int
 	for text != "" {
 		if graphemeIndex == fromGraphemeIndex {
 			b.WriteString(s)
+			graphemeIndex++
+			continue
 		}
 
 		cluster, text, _, state = uniseg.StepString(text, state)
@@ -234,8 +236,10 @@ func (e *Editor) ReplaceText(s string, fromGraphemeIndex, untilGraphemeIndex int
 		}
 
 		b.WriteString(cluster)
-
 		graphemeIndex++
+	}
+	if graphemeIndex == fromGraphemeIndex {
+		b.WriteString(s)
 	}
 
 	e.text = b.String()
