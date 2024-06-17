@@ -12,15 +12,15 @@ type (
 	Editor struct {
 		*tview.Box
 
-		text   string
-		cursor [2]int
+		text                 string
+		currentGraphemeIndex int // rune index
 	}
 )
 
 func NewEditor() *Editor {
 	return &Editor{
 		Box:  tview.NewBox().SetBorder(true).SetTitle("Editor"),
-		text: "test\nhalo ini siapa\namsok",
+		text: "😊  😊 😊 😊 😊\ntest\nhalo ini siapa\namsok",
 	}
 }
 
@@ -45,12 +45,12 @@ func (e *Editor) Draw(screen tcell.Screen) {
 
 		runes := []rune(cluster)
 		screen.SetContent(textX, textY, runes[0], runes[1:], tcell.StyleDefault.Foreground(tcell.ColorRed))
-		textX++
-
+		textX += boundaries >> uniseg.ShiftWidth
 	}
 
 	screen.SetCursorStyle(tcell.CursorStyleBlinkingBar)
-	screen.ShowCursor(e.cursor[0]+x, e.cursor[1]+y)
+	cursor := e.CursorFromGraphemeIndex(e.currentGraphemeIndex)
+	screen.ShowCursor(cursor[0]+x, cursor[1]+y)
 }
 
 func (e *Editor) InputHandler() func(event *tcell.EventKey, setFocus func(p tview.Primitive)) {
@@ -66,105 +66,198 @@ func (e *Editor) InputHandler() func(event *tcell.EventKey, setFocus func(p tvie
 			e.MoveCursorUp()
 		case tcell.KeyRune:
 			text := string(event.Rune())
-			e.ReplaceText(text, e.cursor, e.cursor)
+			e.ReplaceText(text, e.currentGraphemeIndex, e.currentGraphemeIndex)
 			e.MoveCursorRight()
 		case tcell.KeyEnter:
-			e.ReplaceText("\n", e.cursor, e.cursor)
+			e.ReplaceText("\n", e.currentGraphemeIndex, e.currentGraphemeIndex)
 			e.MoveCursorDown()
 		case tcell.KeyBackspace, tcell.KeyBackspace2:
-			didDeleteNewLine := e.cursor[1] > 0 && e.cursor[0] == 0
-			prevLineLastX := 0
-			if didDeleteNewLine {
-				prevLineLastX = len(strings.Split(e.text, "\n")[e.cursor[1]-1])
-			}
-
-			e.ReplaceText("", [2]int{e.cursor[0] - 1, e.cursor[1]}, e.cursor)
-
-			if didDeleteNewLine {
-				e.MoveCursorUp()
-				e.cursor[0] = prevLineLastX
-			} else {
-				e.MoveCursorLeft()
-			}
+			e.currentGraphemeIndex--
+			e.ReplaceText("", e.currentGraphemeIndex-1, e.currentGraphemeIndex)
 		}
 	})
 }
 
 func (e *Editor) MoveCursorRight() {
-	e.cursor[0]++
-	curLineLastX := len(strings.Split(e.text, "\n")[e.cursor[1]])
-	if e.cursor[0] > curLineLastX {
-		e.cursor[0] = curLineLastX
+	lines := strings.Split(e.text, "\n")
+	graphemeIndex := 0
+	for i := 0; i < len(lines); i++ {
+		graphemeIndex += uniseg.GraphemeClusterCount(lines[i]) + 1
+		if e.currentGraphemeIndex >= graphemeIndex {
+			continue
+		}
+
+		if e.currentGraphemeIndex == graphemeIndex-1 {
+			return
+		}
 	}
+
+	e.currentGraphemeIndex++
 }
 
 func (e *Editor) MoveCursorDown() {
-	e.cursor[1]++
-	if e.cursor[1] >= len(strings.Split(e.text, "\n")) {
-		e.cursor[1] = len(strings.Split(e.text, "\n")) - 1
-	}
-	if e.cursor[0] > 0 {
-		e.MoveCursorLeft()
-		e.MoveCursorRight()
+	isTargetLine := false
+	curLineX := 0
+	lines := strings.Split(e.text, "\n")
+	graphemeIndex := 0
+	for i := 0; i < len(lines); i++ {
+		l := uniseg.GraphemeClusterCount(lines[i]) + 1
+		if e.currentGraphemeIndex >= graphemeIndex+l {
+			graphemeIndex += l
+			continue
+		}
+
+		if !isTargetLine && i >= len(lines)-1 {
+			return
+		}
+
+		if isTargetLine {
+			text := lines[i]
+			state := -1
+			boundaries := 0
+			targetLineX := 0
+			for text != "" {
+				_, text, boundaries, state = uniseg.StepString(text, state)
+				x := boundaries >> uniseg.ShiftWidth
+				if targetLineX+x > curLineX {
+					break
+				}
+				targetLineX += x
+				graphemeIndex++
+			}
+			e.currentGraphemeIndex = graphemeIndex
+			return
+		}
+
+		text := lines[i]
+		state := -1
+		boundaries := 0
+		curLineGraphemeIndex := graphemeIndex
+		for curLineGraphemeIndex < e.currentGraphemeIndex {
+			_, text, boundaries, state = uniseg.StepString(text, state)
+			curLineX += boundaries >> uniseg.ShiftWidth
+			curLineGraphemeIndex++
+		}
+		graphemeIndex += l
+		isTargetLine = true
 	}
 }
 
 func (e *Editor) MoveCursorUp() {
-	e.cursor[1]--
-	if e.cursor[1] < 0 {
-		e.cursor[1] = 0
-	}
-	if e.cursor[0] > 0 {
-		e.MoveCursorLeft()
-		e.MoveCursorRight()
+	isTargetLine := false
+	curLineX := 0
+	lines := strings.Split(e.text, "\n")
+	graphemeIndex := uniseg.GraphemeClusterCount(e.text)
+	for i := len(lines) - 1; i >= 0; i-- {
+		l := uniseg.GraphemeClusterCount(lines[i]) + 1
+		if e.currentGraphemeIndex <= graphemeIndex-l {
+			graphemeIndex -= l
+			continue
+		}
+
+		if !isTargetLine && i == 0 {
+			return
+		}
+
+		if isTargetLine {
+			text := lines[i]
+			state := -1
+			boundaries := 0
+			targetLineX := 0
+			graphemeIndex -= l
+			for text != "" {
+				_, text, boundaries, state = uniseg.StepString(text, state)
+				x := boundaries >> uniseg.ShiftWidth
+				if targetLineX+x >= curLineX {
+					break
+				}
+				targetLineX += x
+				graphemeIndex++
+			}
+			e.currentGraphemeIndex = graphemeIndex
+			return
+		}
+
+		text := lines[i]
+		state := -1
+		boundaries := 0
+		graphemeIndex -= l - 1
+		curLineGraphemeIndex := graphemeIndex
+		for curLineGraphemeIndex < e.currentGraphemeIndex+1 {
+			_, text, boundaries, state = uniseg.StepString(text, state)
+			curLineX += boundaries >> uniseg.ShiftWidth
+			curLineGraphemeIndex++
+		}
+		isTargetLine = true
 	}
 }
 
 func (e *Editor) MoveCursorLeft() {
-	e.cursor[0]--
-	if e.cursor[0] < 0 {
-		e.cursor[0] = 0
+	lines := strings.Split(e.text, "\n")
+	graphemeIndex := 0
+	for i := 0; i < len(lines); i++ {
+		if e.currentGraphemeIndex == graphemeIndex {
+			return
+		}
+
+		graphemeIndex += uniseg.GraphemeClusterCount(lines[i]) + 1
+		if e.currentGraphemeIndex >= graphemeIndex {
+			continue
+		}
 	}
+
+	e.currentGraphemeIndex--
 }
 
-func (e *Editor) MoveCursorEnd() {
-	curLineLastX := len(strings.Split(e.text, "\n")[e.cursor[1]])
-	e.cursor[0] = curLineLastX
-}
-
-func (e *Editor) ReplaceText(text string, from, until [2]int) {
+func (e *Editor) ReplaceText(s string, fromGraphemeIndex, untilGraphemeIndex int) {
 	var b strings.Builder
-	textRunes := []rune(e.text)
+	state := -1
+	cluster := ""
+	graphemeIndex := 0
+	text := e.text
 
-	leftUntil := e.RuneIndexFromCursor([2]int{e.cursor[0] - (until[0] - from[0]), e.cursor[1]})
-	if leftUntil > 0 {
-		b.WriteString(string(textRunes[:leftUntil]))
+	if text == "" {
+		e.text = s
+		return
 	}
 
-	b.WriteString(text)
+	for text != "" {
+		if graphemeIndex == fromGraphemeIndex {
+			b.WriteString(s)
+		}
 
-	rightFrom := e.RuneIndexFromCursor(e.cursor)
-	if rightFrom < len(e.text) {
-		b.WriteString(string(textRunes[rightFrom:]))
+		cluster, text, _, state = uniseg.StepString(text, state)
+
+		if graphemeIndex >= fromGraphemeIndex && graphemeIndex <= untilGraphemeIndex {
+			graphemeIndex++
+			continue
+		}
+
+		b.WriteString(cluster)
+
+		graphemeIndex++
 	}
 
 	e.text = b.String()
 }
 
-func (e *Editor) RuneIndexFromCursor(cursor [2]int) int {
-	if cursor[1] < 1 {
-		return cursor[0]
-	}
-
+func (e *Editor) CursorFromGraphemeIndex(graphemeIndex int) [2]int {
 	lines := strings.Split(e.text, "\n")
-	index := 0
 	for i := 0; i < len(lines); i++ {
-		if i == cursor[1] {
-			return index + cursor[0]
+		l := uniseg.GraphemeClusterCount(lines[i]) + 1
+		if graphemeIndex < l {
+			x := 0
+			text := lines[i]
+			state := -1
+			boundaries := 0
+			for graphemeIndex != 0 {
+				_, text, boundaries, state = uniseg.StepString(text, state)
+				x += boundaries >> uniseg.ShiftWidth
+				graphemeIndex--
+			}
+			return [2]int{x, i}
 		}
-
-		index += len([]rune(lines[i])) + 1
+		graphemeIndex -= l
 	}
-
-	return index
+	return [2]int{0, len(lines)}
 }
