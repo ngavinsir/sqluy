@@ -20,7 +20,7 @@ type (
 func NewEditor() *Editor {
 	return &Editor{
 		Box:  tview.NewBox().SetBorder(true).SetTitle("Editor"),
-		text: "test\nhalo\nasok",
+		text: "test\nhalo ini siapa\namsok",
 	}
 }
 
@@ -37,7 +37,7 @@ func (e *Editor) Draw(screen tcell.Screen) {
 	for text != "" {
 		cluster, text, boundaries, state = uniseg.StepString(text, state)
 
-		if boundaries&uniseg.MaskLine == uniseg.LineMustBreak {
+		if boundaries&uniseg.MaskLine == uniseg.LineMustBreak && text != "" {
 			textY++
 			textX = x
 			continue
@@ -60,32 +60,63 @@ func (e *Editor) InputHandler() func(event *tcell.EventKey, setFocus func(p tvie
 			e.MoveCursorLeft()
 		case tcell.KeyRight:
 			e.MoveCursorRight()
+		case tcell.KeyDown:
+			e.MoveCursorDown()
+		case tcell.KeyUp:
+			e.MoveCursorUp()
 		case tcell.KeyRune:
-			textRunes := []rune(e.text)
-			r := event.Rune()
-			e.text = string(textRunes[:e.cursor[0]]) + string(r) + string(textRunes[e.cursor[0]:])
+			text := string(event.Rune())
+			e.ReplaceText(text, e.cursor, e.cursor)
 			e.MoveCursorRight()
+		case tcell.KeyEnter:
+			e.ReplaceText("\n", e.cursor, e.cursor)
+			e.MoveCursorDown()
 		case tcell.KeyBackspace, tcell.KeyBackspace2:
-			var b strings.Builder
-			textRunes := []rune(e.text)
-			leftUntil := e.cursor[0] - 1
-			if leftUntil > 0 {
-				b.WriteString(string(textRunes[:leftUntil]))
+			didDeleteNewLine := e.cursor[1] > 0 && e.cursor[0] == 0
+			prevLineLastX := 0
+			if didDeleteNewLine {
+				prevLineLastX = len(strings.Split(e.text, "\n")[e.cursor[1]-1])
 			}
-			rightFrom := e.cursor[0]
-			if rightFrom < len(e.text) {
-				b.WriteString(string(textRunes[rightFrom:]))
+
+			e.ReplaceText("", [2]int{e.cursor[0] - 1, e.cursor[1]}, e.cursor)
+
+			if didDeleteNewLine {
+				e.MoveCursorUp()
+				e.cursor[0] = prevLineLastX
+			} else {
+				e.MoveCursorLeft()
 			}
-			e.text = b.String()
-			e.MoveCursorLeft()
 		}
 	})
 }
 
 func (e *Editor) MoveCursorRight() {
 	e.cursor[0]++
-	if e.cursor[0] > len(e.text) {
-		e.cursor[0] = len(e.text)
+	curLineLastX := len(strings.Split(e.text, "\n")[e.cursor[1]])
+	if e.cursor[0] > curLineLastX {
+		e.cursor[0] = curLineLastX
+	}
+}
+
+func (e *Editor) MoveCursorDown() {
+	e.cursor[1]++
+	if e.cursor[1] >= len(strings.Split(e.text, "\n")) {
+		e.cursor[1] = len(strings.Split(e.text, "\n")) - 1
+	}
+	if e.cursor[0] > 0 {
+		e.MoveCursorLeft()
+		e.MoveCursorRight()
+	}
+}
+
+func (e *Editor) MoveCursorUp() {
+	e.cursor[1]--
+	if e.cursor[1] < 0 {
+		e.cursor[1] = 0
+	}
+	if e.cursor[0] > 0 {
+		e.MoveCursorLeft()
+		e.MoveCursorRight()
 	}
 }
 
@@ -94,4 +125,46 @@ func (e *Editor) MoveCursorLeft() {
 	if e.cursor[0] < 0 {
 		e.cursor[0] = 0
 	}
+}
+
+func (e *Editor) MoveCursorEnd() {
+	curLineLastX := len(strings.Split(e.text, "\n")[e.cursor[1]])
+	e.cursor[0] = curLineLastX
+}
+
+func (e *Editor) ReplaceText(text string, from, until [2]int) {
+	var b strings.Builder
+	textRunes := []rune(e.text)
+
+	leftUntil := e.RuneIndexFromCursor([2]int{e.cursor[0] - (until[0] - from[0]), e.cursor[1]})
+	if leftUntil > 0 {
+		b.WriteString(string(textRunes[:leftUntil]))
+	}
+
+	b.WriteString(text)
+
+	rightFrom := e.RuneIndexFromCursor(e.cursor)
+	if rightFrom < len(e.text) {
+		b.WriteString(string(textRunes[rightFrom:]))
+	}
+
+	e.text = b.String()
+}
+
+func (e *Editor) RuneIndexFromCursor(cursor [2]int) int {
+	if cursor[1] < 1 {
+		return cursor[0]
+	}
+
+	lines := strings.Split(e.text, "\n")
+	index := 0
+	for i := 0; i < len(lines); i++ {
+		if i == cursor[1] {
+			return index + cursor[0]
+		}
+
+		index += len([]rune(lines[i])) + 1
+	}
+
+	return index
 }
