@@ -1,7 +1,6 @@
 package main
 
 import (
-	"strconv"
 	"strings"
 
 	"github.com/gdamore/tcell/v2"
@@ -61,16 +60,12 @@ func (e *Editor) InputHandler() func(event *tcell.EventKey, setFocus func(p tvie
 		switch key := event.Key(); key {
 		case tcell.KeyLeft:
 			e.MoveCursorLeft()
-			e.viewModalFunc(strconv.Itoa(e.currentGraphemeIndex))
 		case tcell.KeyRight:
 			e.MoveCursorRight()
-			e.viewModalFunc(strconv.Itoa(e.currentGraphemeIndex))
 		case tcell.KeyDown:
 			e.MoveCursorDown()
-			e.viewModalFunc(strconv.Itoa(e.currentGraphemeIndex))
 		case tcell.KeyUp:
 			e.MoveCursorUp()
-			e.viewModalFunc(strconv.Itoa(e.currentGraphemeIndex))
 		case tcell.KeyRune:
 			text := string(event.Rune())
 			e.ReplaceText(text, e.currentGraphemeIndex, e.currentGraphemeIndex)
@@ -185,7 +180,7 @@ func (e *Editor) MoveCursorUp() {
 			return
 		}
 
-		text := lines[i]
+		text := lines[i] + " "
 		state := -1
 		boundaries := 0
 		graphemeIndex -= l - 1
