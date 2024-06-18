@@ -45,7 +45,7 @@ func main() {
 
 	wg.Add(1)
 	app := tview.NewApplication()
-	go modalLoop(ctx, modalChan, page, modal, app)
+	go modalLoop(ctx, modalChan, page, modal, app, &wg)
 	err := app.SetRoot(page, true).Run()
 	cancel()
 	wg.Wait()
@@ -55,7 +55,9 @@ func main() {
 	}
 }
 
-func modalLoop(ctx context.Context, c chan ShowModalArg, p *tview.Pages, m *tview.Modal, app *tview.Application) {
+func modalLoop(ctx context.Context, c chan ShowModalArg, p *tview.Pages, m *tview.Modal, app *tview.Application, wg *sync.WaitGroup) {
+	defer wg.Done()
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -73,7 +75,17 @@ func modalLoop(ctx context.Context, c chan ShowModalArg, p *tview.Pages, m *tvie
 				p.ShowPage("modal")
 				app.SetFocus(m)
 			})
-			arg.Wg.Wait()
+
+			c := make(chan struct{})
+			go func() {
+				defer close(c)
+				arg.Wg.Wait()
+			}()
+			select {
+			case <-ctx.Done():
+				return
+			case <-c:
+			}
 		}
 	}
 }
