@@ -1,6 +1,7 @@
 package main
 
 import (
+	"strconv"
 	"strings"
 
 	"github.com/gdamore/tcell/v2"
@@ -13,17 +14,23 @@ type (
 		*tview.Box
 
 		text                 string
-		currentGraphemeIndex int // rune index
+		cameraText           string
+		currentGraphemeIndex int
+		cameraX              int
+		cameraY              int
 
 		viewModalFunc func(string)
 	}
 )
 
 func NewEditor() *Editor {
-	return &Editor{
-		Box:  tview.NewBox().SetBorder(true).SetTitle("Editor"),
-		text: "😊  😊 😊 😊 😊\ntest\nhalo ini siapa\namsok",
+	e := &Editor{
+		Box:     tview.NewBox().SetBorder(true).SetTitle("Editor"),
+		text:    "😊  😊 😊 😊 😊\ntest\nhalo ini siapa\namsok",
+		cameraX: 2,
 	}
+	e.UpdateCameraText()
+	return e
 }
 
 func (e *Editor) Draw(screen tcell.Screen) {
@@ -31,7 +38,7 @@ func (e *Editor) Draw(screen tcell.Screen) {
 
 	x, y, _, _ := e.Box.GetInnerRect()
 
-	text := e.text
+	text := e.cameraText
 	state := -1
 	cluster := ""
 	textX, textY := x, y
@@ -55,17 +62,60 @@ func (e *Editor) Draw(screen tcell.Screen) {
 	screen.ShowCursor(cursor[0]+x, cursor[1]+y)
 }
 
+func (e *Editor) UpdateCameraText() {
+	var b strings.Builder
+	text := e.text
+	state := -1
+	cluster := ""
+	boundaries := 0
+	lineWidth := 0
+	y := 0
+	for text != "" {
+		cluster, text, boundaries, state = uniseg.StepString(text, state)
+		clusterWidth := boundaries >> uniseg.ShiftWidth
+
+		if boundaries&uniseg.MaskLine == uniseg.LineMustBreak && text != "" {
+			y++
+			lineWidth = 0
+			b.WriteString(cluster)
+			continue
+		}
+
+		// line above camera y, skip
+		if y < e.cameraY {
+			continue
+		}
+
+		// grapheme before camera x, skip
+		if lineWidth < e.cameraX {
+			lineWidth += 1
+			if clusterWidth > 1 {
+				text = strings.Repeat("<", clusterWidth-1) + text
+			}
+			continue
+		}
+
+		b.WriteString(cluster)
+		lineWidth += clusterWidth
+	}
+	e.cameraText = b.String()
+}
+
 func (e *Editor) InputHandler() func(event *tcell.EventKey, setFocus func(p tview.Primitive)) {
 	return e.Box.WrapInputHandler(func(event *tcell.EventKey, setFocus func(p tview.Primitive)) {
 		switch key := event.Key(); key {
 		case tcell.KeyLeft:
 			e.MoveCursorLeft()
+			e.viewModalFunc(strconv.Itoa(e.currentGraphemeIndex))
 		case tcell.KeyRight:
 			e.MoveCursorRight()
+			e.viewModalFunc(strconv.Itoa(e.currentGraphemeIndex))
 		case tcell.KeyDown:
 			e.MoveCursorDown()
+			e.viewModalFunc(strconv.Itoa(e.currentGraphemeIndex))
 		case tcell.KeyUp:
 			e.MoveCursorUp()
+			e.viewModalFunc(strconv.Itoa(e.currentGraphemeIndex))
 		case tcell.KeyRune:
 			text := string(event.Rune())
 			e.ReplaceText(text, e.currentGraphemeIndex, e.currentGraphemeIndex)
@@ -81,7 +131,7 @@ func (e *Editor) InputHandler() func(event *tcell.EventKey, setFocus func(p tvie
 }
 
 func (e *Editor) MoveCursorRight() {
-	lines := strings.Split(e.text, "\n")
+	lines := strings.Split(e.cameraText, "\n")
 	graphemeIndex := 0
 	for i := 0; i < len(lines); i++ {
 		graphemeIndex += uniseg.GraphemeClusterCount(lines[i]) + 1
@@ -100,7 +150,7 @@ func (e *Editor) MoveCursorRight() {
 func (e *Editor) MoveCursorDown() {
 	isTargetLine := false
 	curLineX := 0
-	lines := strings.Split(e.text, "\n")
+	lines := strings.Split(e.cameraText, "\n")
 	graphemeIndex := 0
 	for i := 0; i < len(lines); i++ {
 		l := uniseg.GraphemeClusterCount(lines[i]) + 1
@@ -148,8 +198,8 @@ func (e *Editor) MoveCursorDown() {
 func (e *Editor) MoveCursorUp() {
 	isTargetLine := false
 	curLineX := 0
-	lines := strings.Split(e.text, "\n")
-	graphemeIndex := uniseg.GraphemeClusterCount(e.text)
+	lines := strings.Split(e.cameraText, "\n")
+	graphemeIndex := uniseg.GraphemeClusterCount(e.cameraText)
 	for i := len(lines) - 1; i >= 0; i-- {
 		l := uniseg.GraphemeClusterCount(lines[i]) + 1
 		if e.currentGraphemeIndex <= graphemeIndex-l {
@@ -195,7 +245,7 @@ func (e *Editor) MoveCursorUp() {
 }
 
 func (e *Editor) MoveCursorLeft() {
-	lines := strings.Split(e.text, "\n")
+	lines := strings.Split(e.cameraText, "\n")
 	graphemeIndex := 0
 	for i := 0; i < len(lines); i++ {
 		if e.currentGraphemeIndex == graphemeIndex {
@@ -212,6 +262,8 @@ func (e *Editor) MoveCursorLeft() {
 }
 
 func (e *Editor) ReplaceText(s string, fromGraphemeIndex, untilGraphemeIndex int) {
+	defer e.UpdateCameraText()
+
 	var b strings.Builder
 	state := -1
 	cluster := ""
@@ -248,7 +300,7 @@ func (e *Editor) ReplaceText(s string, fromGraphemeIndex, untilGraphemeIndex int
 }
 
 func (e *Editor) CursorFromGraphemeIndex(graphemeIndex int) [2]int {
-	lines := strings.Split(e.text, "\n")
+	lines := strings.Split(e.cameraText, "\n")
 	for i := 0; i < len(lines); i++ {
 		l := uniseg.GraphemeClusterCount(lines[i]) + 1
 		if graphemeIndex < l {
