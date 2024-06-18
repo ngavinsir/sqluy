@@ -68,6 +68,7 @@ func (e *Editor) UpdateCameraText() {
 	var b strings.Builder
 
 	clear(e.cameraGraphemeIndexMapper)
+	_, _, w, h := e.Box.GetInnerRect()
 	text := e.text
 	state := -1
 	cluster := ""
@@ -94,8 +95,8 @@ func (e *Editor) UpdateCameraText() {
 			continue
 		}
 
-		// line above camera y, skip
-		if y < e.cameraY {
+		// line above or below camera y, skip
+		if y < e.cameraY || y >= e.cameraY+h {
 			e.cameraGraphemeIndexMapper[cameraGraphemeIndex] = graphemeIndex
 			graphemeIndex++
 			continue
@@ -110,6 +111,14 @@ func (e *Editor) UpdateCameraText() {
 				replacementCount = clusterWidth - 1
 				text = strings.Repeat("<", replacementCount) + text
 			}
+			continue
+		}
+
+		// grapheme after camera x, skip
+		if lineWidth >= e.cameraX+w-1 {
+			e.cameraGraphemeIndexMapper[cameraGraphemeIndex] = graphemeIndex
+			graphemeIndex++
+			lineWidth += 1
 			continue
 		}
 
