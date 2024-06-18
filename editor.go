@@ -26,7 +26,7 @@ type (
 func NewEditor() *Editor {
 	e := &Editor{
 		Box:                       tview.NewBox().SetBorder(true).SetTitle("Editor"),
-		text:                      "😊  😊 😊 😊 😊\ntest\nhalo ini siapa\namsok",
+		text:                      "😊😊  😊 😊 😊 😊\ntest\nhalo ini siapa\namsok",
 		cameraX:                   5,
 		cameraY:                   1,
 		cameraGraphemeIndexMapper: make(map[int]int),
@@ -115,10 +115,15 @@ func (e *Editor) UpdateCameraText() {
 		}
 
 		// grapheme after camera x, skip
-		if lineWidth >= e.cameraX+w-1 {
+		if lineWidth+clusterWidth > e.cameraX+w {
 			e.cameraGraphemeIndexMapper[cameraGraphemeIndex] = graphemeIndex
 			graphemeIndex++
 			lineWidth += 1
+			if clusterWidth > 1 && lineWidth == e.cameraX+w {
+				replacementCount = clusterWidth - 1
+				text = strings.Repeat(">", replacementCount) + text
+				lineWidth--
+			}
 			continue
 		}
 
