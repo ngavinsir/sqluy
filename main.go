@@ -1,12 +1,79 @@
 package main
 
-import "github.com/rivo/tview"
+import (
+	"context"
+	"sync"
+
+	"github.com/rivo/tview"
+)
+
+type (
+	ShowModalArg struct {
+		Wg      *sync.WaitGroup
+		Refocus tview.Primitive
+		Text    string
+	}
+)
 
 func main() {
+	var wg sync.WaitGroup
+	ctx, cancel := context.WithCancel(context.Background())
+
+	modalChan := make(chan ShowModalArg)
+
+	page := tview.NewPages()
+
+	e := NewEditor()
+	e.viewModalFunc = func(text string) {
+		var wg sync.WaitGroup
+		modalChan <- ShowModalArg{Text: text, Wg: &wg, Refocus: e}
+	}
 	flex := tview.NewFlex().
-		AddItem(NewEditor(), 0, 1, false).
-		AddItem(NewEditor(), 0, 1, true)
-	if err := tview.NewApplication().SetRoot(flex, true).Run(); err != nil {
+		AddItem(e, 0, 1, true)
+	modal := tview.NewModal().AddButtons([]string{"Ok"})
+	modalFlex := tview.NewFlex().
+		AddItem(nil, 0, 1, false).
+		AddItem(tview.NewFlex().SetDirection(tview.FlexRow).
+			AddItem(nil, 0, 1, false).
+			AddItem(modal, 0, 1, false).
+			AddItem(nil, 0, 1, false),
+			0, 1, false).
+		AddItem(nil, 0, 1, false)
+
+	page.AddPage("main", flex, true, true)
+	page.AddPage("modal", modalFlex, true, false)
+
+	wg.Add(1)
+	app := tview.NewApplication()
+	go modalLoop(ctx, modalChan, page, modal, app)
+	err := app.SetRoot(page, true).Run()
+	cancel()
+	wg.Wait()
+
+	if err != nil {
 		panic(err)
+	}
+}
+
+func modalLoop(ctx context.Context, c chan ShowModalArg, p *tview.Pages, m *tview.Modal, app *tview.Application) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case arg := <-c:
+			arg.Wg.Add(1)
+			app.QueueUpdateDraw(func() {
+				m.SetText(arg.Text).SetDoneFunc(func(buttonIndex int, buttonLabel string) {
+					if buttonLabel == "Ok" {
+						app.SetFocus(arg.Refocus)
+						p.HidePage("modal")
+						arg.Wg.Done()
+					}
+				})
+				p.ShowPage("modal")
+				app.SetFocus(m)
+			})
+			arg.Wg.Wait()
+		}
 	}
 }
