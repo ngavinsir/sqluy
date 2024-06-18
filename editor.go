@@ -1,7 +1,6 @@
 package main
 
 import (
-	"strconv"
 	"strings"
 
 	"github.com/gdamore/tcell/v2"
@@ -13,11 +12,12 @@ type (
 	Editor struct {
 		*tview.Box
 
-		text                 string
-		cameraText           string
-		currentGraphemeIndex int
-		cameraX              int
-		cameraY              int
+		text                      string
+		cameraText                string
+		cameraGraphemeIndex       int
+		cameraX                   int
+		cameraY                   int
+		cameraGraphemeIndexMapper map[int]int
 
 		viewModalFunc func(string)
 	}
@@ -25,9 +25,11 @@ type (
 
 func NewEditor() *Editor {
 	e := &Editor{
-		Box:     tview.NewBox().SetBorder(true).SetTitle("Editor"),
-		text:    "😊  😊 😊 😊 😊\ntest\nhalo ini siapa\namsok",
-		cameraX: 2,
+		Box:                       tview.NewBox().SetBorder(true).SetTitle("Editor"),
+		text:                      "😊  😊 😊 😊 😊\ntest\nhalo ini siapa\namsok",
+		cameraX:                   5,
+		cameraY:                   1,
+		cameraGraphemeIndexMapper: make(map[int]int),
 	}
 	e.UpdateCameraText()
 	return e
@@ -58,46 +60,70 @@ func (e *Editor) Draw(screen tcell.Screen) {
 	}
 
 	screen.SetCursorStyle(tcell.CursorStyleBlinkingBar)
-	cursor := e.CursorFromGraphemeIndex(e.currentGraphemeIndex)
+	cursor := e.CursorFromGraphemeIndex(e.cameraGraphemeIndex)
 	screen.ShowCursor(cursor[0]+x, cursor[1]+y)
 }
 
 func (e *Editor) UpdateCameraText() {
 	var b strings.Builder
+
+	clear(e.cameraGraphemeIndexMapper)
 	text := e.text
 	state := -1
 	cluster := ""
 	boundaries := 0
 	lineWidth := 0
 	y := 0
+	graphemeIndex := 0
+	cameraGraphemeIndex := 0
+	replacementCount := 0
 	for text != "" {
 		cluster, text, boundaries, state = uniseg.StepString(text, state)
 		clusterWidth := boundaries >> uniseg.ShiftWidth
 
 		if boundaries&uniseg.MaskLine == uniseg.LineMustBreak && text != "" {
+			e.cameraGraphemeIndexMapper[cameraGraphemeIndex] = graphemeIndex
+			graphemeIndex++
+
+			if y >= e.cameraY {
+				cameraGraphemeIndex++
+				lineWidth = 0
+				b.WriteString(cluster)
+			}
 			y++
-			lineWidth = 0
-			b.WriteString(cluster)
 			continue
 		}
 
 		// line above camera y, skip
 		if y < e.cameraY {
+			e.cameraGraphemeIndexMapper[cameraGraphemeIndex] = graphemeIndex
+			graphemeIndex++
 			continue
 		}
 
 		// grapheme before camera x, skip
 		if lineWidth < e.cameraX {
+			e.cameraGraphemeIndexMapper[cameraGraphemeIndex] = graphemeIndex
+			graphemeIndex++
 			lineWidth += 1
 			if clusterWidth > 1 {
-				text = strings.Repeat("<", clusterWidth-1) + text
+				replacementCount = clusterWidth - 1
+				text = strings.Repeat("<", replacementCount) + text
 			}
 			continue
 		}
 
+		e.cameraGraphemeIndexMapper[cameraGraphemeIndex] = graphemeIndex
+		if replacementCount <= 0 {
+			graphemeIndex++
+		} else {
+			replacementCount--
+		}
+		cameraGraphemeIndex++
 		b.WriteString(cluster)
 		lineWidth += clusterWidth
 	}
+	e.cameraGraphemeIndexMapper[cameraGraphemeIndex] = graphemeIndex
 	e.cameraText = b.String()
 }
 
@@ -106,26 +132,26 @@ func (e *Editor) InputHandler() func(event *tcell.EventKey, setFocus func(p tvie
 		switch key := event.Key(); key {
 		case tcell.KeyLeft:
 			e.MoveCursorLeft()
-			e.viewModalFunc(strconv.Itoa(e.currentGraphemeIndex))
+			// e.viewModalFunc(strconv.Itoa(e.cameraGraphemeIndex))
 		case tcell.KeyRight:
 			e.MoveCursorRight()
-			e.viewModalFunc(strconv.Itoa(e.currentGraphemeIndex))
+			// e.viewModalFunc(strconv.Itoa(e.cameraGraphemeIndex))
 		case tcell.KeyDown:
 			e.MoveCursorDown()
-			e.viewModalFunc(strconv.Itoa(e.currentGraphemeIndex))
+			// e.viewModalFunc(strconv.Itoa(e.cameraGraphemeIndex))
 		case tcell.KeyUp:
 			e.MoveCursorUp()
-			e.viewModalFunc(strconv.Itoa(e.currentGraphemeIndex))
+			// e.viewModalFunc(strconv.Itoa(e.cameraGraphemeIndex))
 		case tcell.KeyRune:
 			text := string(event.Rune())
-			e.ReplaceText(text, e.currentGraphemeIndex, e.currentGraphemeIndex)
-			e.currentGraphemeIndex++
+			e.ReplaceText(text, e.cameraGraphemeIndex, e.cameraGraphemeIndex)
+			e.cameraGraphemeIndex++
 		case tcell.KeyEnter:
-			e.ReplaceText("\n", e.currentGraphemeIndex, e.currentGraphemeIndex)
-			e.currentGraphemeIndex++
+			e.ReplaceText("\n", e.cameraGraphemeIndex, e.cameraGraphemeIndex)
+			e.cameraGraphemeIndex++
 		case tcell.KeyBackspace, tcell.KeyBackspace2:
-			e.ReplaceText("", e.currentGraphemeIndex-1, e.currentGraphemeIndex)
-			e.currentGraphemeIndex--
+			e.ReplaceText("", e.cameraGraphemeIndex-1, e.cameraGraphemeIndex)
+			e.cameraGraphemeIndex--
 		}
 	})
 }
@@ -135,16 +161,16 @@ func (e *Editor) MoveCursorRight() {
 	graphemeIndex := 0
 	for i := 0; i < len(lines); i++ {
 		graphemeIndex += uniseg.GraphemeClusterCount(lines[i]) + 1
-		if e.currentGraphemeIndex >= graphemeIndex {
+		if e.cameraGraphemeIndex >= graphemeIndex {
 			continue
 		}
 
-		if e.currentGraphemeIndex == graphemeIndex-1 {
+		if e.cameraGraphemeIndex == graphemeIndex-1 {
 			return
 		}
 	}
 
-	e.currentGraphemeIndex++
+	e.cameraGraphemeIndex++
 }
 
 func (e *Editor) MoveCursorDown() {
@@ -154,12 +180,16 @@ func (e *Editor) MoveCursorDown() {
 	graphemeIndex := 0
 	for i := 0; i < len(lines); i++ {
 		l := uniseg.GraphemeClusterCount(lines[i]) + 1
-		if e.currentGraphemeIndex >= graphemeIndex+l {
+		if e.cameraGraphemeIndex >= graphemeIndex+l {
 			graphemeIndex += l
 			continue
 		}
 
 		if !isTargetLine && i >= len(lines)-1 {
+			if i < len(strings.Split(e.text, "\n"))-1 {
+				e.cameraY++
+				e.UpdateCameraText()
+			}
 			return
 		}
 
@@ -177,7 +207,7 @@ func (e *Editor) MoveCursorDown() {
 				targetLineX += x
 				graphemeIndex++
 			}
-			e.currentGraphemeIndex = graphemeIndex
+			e.cameraGraphemeIndex = graphemeIndex
 			return
 		}
 
@@ -185,7 +215,7 @@ func (e *Editor) MoveCursorDown() {
 		state := -1
 		boundaries := 0
 		curLineGraphemeIndex := graphemeIndex
-		for curLineGraphemeIndex < e.currentGraphemeIndex {
+		for curLineGraphemeIndex < e.cameraGraphemeIndex {
 			_, text, boundaries, state = uniseg.StepString(text, state)
 			curLineX += boundaries >> uniseg.ShiftWidth
 			curLineGraphemeIndex++
@@ -202,12 +232,16 @@ func (e *Editor) MoveCursorUp() {
 	graphemeIndex := uniseg.GraphemeClusterCount(e.cameraText)
 	for i := len(lines) - 1; i >= 0; i-- {
 		l := uniseg.GraphemeClusterCount(lines[i]) + 1
-		if e.currentGraphemeIndex <= graphemeIndex-l {
+		if e.cameraGraphemeIndex <= graphemeIndex-l {
 			graphemeIndex -= l
 			continue
 		}
 
 		if !isTargetLine && i == 0 {
+			if e.cameraY > 0 {
+				e.cameraY--
+				e.UpdateCameraText()
+			}
 			return
 		}
 
@@ -226,7 +260,7 @@ func (e *Editor) MoveCursorUp() {
 				targetLineX += x
 				graphemeIndex++
 			}
-			e.currentGraphemeIndex = graphemeIndex
+			e.cameraGraphemeIndex = graphemeIndex
 			return
 		}
 
@@ -235,7 +269,7 @@ func (e *Editor) MoveCursorUp() {
 		boundaries := 0
 		graphemeIndex -= l - 1
 		curLineGraphemeIndex := graphemeIndex
-		for curLineGraphemeIndex < e.currentGraphemeIndex+1 {
+		for curLineGraphemeIndex < e.cameraGraphemeIndex+1 {
 			_, text, boundaries, state = uniseg.StepString(text, state)
 			curLineX += boundaries >> uniseg.ShiftWidth
 			curLineGraphemeIndex++
@@ -248,23 +282,31 @@ func (e *Editor) MoveCursorLeft() {
 	lines := strings.Split(e.cameraText, "\n")
 	graphemeIndex := 0
 	for i := 0; i < len(lines); i++ {
-		if e.currentGraphemeIndex == graphemeIndex {
+		if e.cameraGraphemeIndex == graphemeIndex {
+			if e.cameraX > 0 {
+				e.cameraX--
+				e.UpdateCameraText()
+			}
 			return
 		}
 
 		graphemeIndex += uniseg.GraphemeClusterCount(lines[i]) + 1
-		if e.currentGraphemeIndex >= graphemeIndex {
+		if e.cameraGraphemeIndex >= graphemeIndex {
 			continue
 		}
 	}
 
-	e.currentGraphemeIndex--
+	e.cameraGraphemeIndex--
 }
 
 func (e *Editor) ReplaceText(s string, fromGraphemeIndex, untilGraphemeIndex int) {
 	defer e.UpdateCameraText()
 
 	var b strings.Builder
+	// e.viewModalFunc(fmt.Sprintf("camera grapheme index: %d\nfrom grapheme index: %d\nuntil grapheme index: %d\nfrom mapped: %d\nuntil mapped: %d",
+	// 	e.cameraGraphemeIndex, fromGraphemeIndex, untilGraphemeIndex, e.cameraGraphemeIndexMapper[fromGraphemeIndex], e.cameraGraphemeIndexMapper[untilGraphemeIndex]))
+	fromGraphemeIndex = e.cameraGraphemeIndexMapper[fromGraphemeIndex]
+	untilGraphemeIndex = e.cameraGraphemeIndexMapper[untilGraphemeIndex]
 	state := -1
 	cluster := ""
 	graphemeIndex := 0
