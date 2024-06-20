@@ -21,16 +21,19 @@ type (
 		spansPerLines [][]span
 		cursor        [2]int // row, grapheme index
 
+		offsets [2]int // row, column offsets
+
 		viewModalFunc func(string)
 	}
 )
 
 func NewEditor() *Editor {
 	e := &Editor{
-		Box: tview.NewBox().SetBorder(true).SetTitle("Editor"),
+		Box:     tview.NewBox().SetBorder(true).SetTitle("Editor"),
+		offsets: [2]int{0, 0},
 	}
 	// e.SetText("abc\nde\nrsitenrstnrsyu\nrstn\na\nb\n\n\na")
-	e.SetText("😊😊  😊 😊 😊 😊\ntest\nhalo ini siapa\namsok", [2]int{0, 0})
+	e.SetText("😊😊  😊 😊 😊 😊\ntest\nhalo ini siapa\namsok", [2]int{0, 1})
 	// panic(fmt.Sprintf("%+v\n", e.cameraGraphemeIndexMapper))
 	return e
 }
@@ -71,18 +74,41 @@ func (e *Editor) SetText(text string, cursor [2]int) *Editor {
 func (e *Editor) Draw(screen tcell.Screen) {
 	e.Box.DrawForSubclass(screen, e)
 
-	x, y, _, _ := e.Box.GetInnerRect()
+	x, y, w, h := e.Box.GetInnerRect()
 
 	textX := x
 	textY := y
-	for _, spans := range e.spansPerLines {
+	for _, spans := range e.spansPerLines[e.offsets[0] : e.offsets[0]+h] {
 		for _, span := range spans {
+			// skip drawing end line sentinel
 			if span.runes == nil {
 				break
 			}
+			// skip grapheme completely hidden on the left
+			if textX+span.width <= x+e.offsets[1] {
+				textX += span.width
+				continue
+			}
+			// skip grapheme completely hidden on the right
+			if textX >= x+e.offsets[1]+w {
+				break
+			}
+
 			runes := span.runes
-			screen.SetContent(textX, textY, runes[0], runes[1:], tcell.StyleDefault.Foreground(tcell.ColorRed))
-			textX += int(span.width)
+			width := span.width
+			// replace too wide grapheme on the left edge
+			if textX < x+e.offsets[1] && textX+width > x+e.offsets[1] {
+				c := textX + width - (x + e.offsets[1])
+				runes = []rune(strings.Repeat("<", c))
+				textX += width - c
+				width = c
+			} else if textX+width > x+e.offsets[1]+w { // too wide grapheme on the right edge
+				c := (x + e.offsets[1] + w) - textX
+				runes = []rune(strings.Repeat(">", c))
+				width = c
+			}
+			screen.SetContent(textX-e.offsets[1], textY, runes[0], runes[1:], tcell.StyleDefault.Foreground(tcell.ColorRed))
+			textX += width
 		}
 		textY++
 		textX = x
@@ -92,8 +118,11 @@ func (e *Editor) Draw(screen tcell.Screen) {
 	for _, span := range e.spansPerLines[e.cursor[0]][:e.cursor[1]] {
 		cursorX += span.width
 	}
+	if cursorX > x+w-e.offsets[1] {
+		cursorX = x + w + e.offsets[1]
+	}
 	screen.SetCursorStyle(tcell.CursorStyleBlinkingBar)
-	screen.ShowCursor(cursorX, e.cursor[0]+y)
+	screen.ShowCursor(cursorX-e.offsets[1], e.cursor[0]+y-e.offsets[0])
 }
 
 func (e *Editor) InputHandler() func(event *tcell.EventKey, setFocus func(p tview.Primitive)) {
@@ -138,9 +167,19 @@ func (e *Editor) InputHandler() func(event *tcell.EventKey, setFocus func(p tvie
 }
 
 func (e *Editor) MoveCursorRight() {
+	_, _, w, _ := e.Box.GetInnerRect()
 	if e.cursor[1] >= len(e.spansPerLines[e.cursor[0]])-1 {
 		return
 	}
+
+	currentRowWidth := 0
+	for _, span := range e.spansPerLines[e.cursor[0]][:e.cursor[1]] {
+		currentRowWidth += span.width
+	}
+	if currentRowWidth >= w {
+		e.offsets[1]++
+	}
+
 	e.cursor[1]++
 }
 
@@ -148,12 +187,20 @@ func (e *Editor) MoveCursorLeft() {
 	if e.cursor[1] < 1 {
 		return
 	}
+	if e.cursor[1] <= e.offsets[1] {
+		e.offsets[1]--
+	}
+
 	e.cursor[1]--
 }
 
 func (e *Editor) MoveCursorDown() {
+	_, _, _, h := e.Box.GetInnerRect()
 	if e.cursor[0] >= len(e.spansPerLines)-1 {
 		return
+	}
+	if e.cursor[0] >= h-1 {
+		e.offsets[0]++
 	}
 
 	currentRowWidth := 0
@@ -181,6 +228,9 @@ func (e *Editor) MoveCursorDown() {
 func (e *Editor) MoveCursorUp() {
 	if e.cursor[0] < 1 {
 		return
+	}
+	if e.cursor[0] <= e.offsets[0] {
+		e.offsets[0]--
 	}
 
 	currentRowWidth := 0
