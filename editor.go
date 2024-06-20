@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"strings"
 
 	"github.com/gdamore/tcell/v2"
@@ -27,20 +26,22 @@ type (
 
 func NewEditor() *Editor {
 	e := &Editor{
-		Box:  tview.NewBox().SetBorder(true).SetTitle("Editor"),
-		text: "😊😊  😊 😊 😊 😊\ntest\nhalo ini siapa\namsok",
-		// text:                      "abc\nab\n😊😊",
-		cameraX:                   4,
+		Box: tview.NewBox().SetBorder(true).SetTitle("Editor"),
+		// text: "😊😊  😊 😊 😊 😊\ntest\nhalo ini siapa\namsok",
+		text:                      "abc\n123456789\n😊😊",
+		cameraX:                   1,
 		cameraY:                   1,
 		cameraGraphemeIndexMapper: make(map[int]int),
 		graphemeIndexMapper:       make(map[int]int),
 	}
+	e.Box.SetRect(0, 0, 5, 3)
 	e.CalculateFields()
 	// panic(fmt.Sprintf("%+v\n", e.cameraGraphemeIndexMapper))
 	return e
 }
 
 func (e *Editor) Draw(screen tcell.Screen) {
+	// panic(errors.New(fmt.Sprintf("%+v\n%+v\n%+v", e.cameraGraphemeIndex, e.cameraGraphemeIndexMapper[e.cameraGraphemeIndex], e.cameraGraphemeIndexMapper)))
 	e.Box.DrawForSubclass(screen, e)
 
 	x, y, _, _ := e.Box.GetInnerRect()
@@ -89,31 +90,26 @@ func (e *Editor) CalculateFields() {
 		clusterWidth := boundaries >> uniseg.ShiftWidth
 
 		if boundaries&uniseg.MaskLine == uniseg.LineMustBreak && text != "" {
-			e.cameraGraphemeIndexMapper[cameraGraphemeIndex] = graphemeIndex
-			e.graphemeIndexMapper[graphemeIndex] = cameraGraphemeIndex
-			graphemeIndex++
-
 			if y >= e.cameraY {
+				e.cameraGraphemeIndexMapper[cameraGraphemeIndex] = graphemeIndex
+				e.graphemeIndexMapper[graphemeIndex] = cameraGraphemeIndex
 				cameraGraphemeIndex++
 				lineWidth = 0
 				b.WriteString(cluster)
 			}
+			graphemeIndex++
 			y++
 			continue
 		}
 
 		// line above or below camera y, skip
 		if y < e.cameraY || y >= e.cameraY+h {
-			e.cameraGraphemeIndexMapper[cameraGraphemeIndex] = graphemeIndex
-			e.graphemeIndexMapper[graphemeIndex] = cameraGraphemeIndex
 			graphemeIndex++
 			continue
 		}
 
 		// grapheme before camera x, skip
 		if lineWidth < e.cameraX {
-			e.cameraGraphemeIndexMapper[cameraGraphemeIndex] = graphemeIndex
-			e.graphemeIndexMapper[graphemeIndex] = cameraGraphemeIndex
 			graphemeIndex++
 			lineWidth += 1
 			if clusterWidth > 1 {
@@ -124,11 +120,8 @@ func (e *Editor) CalculateFields() {
 		}
 
 		// grapheme after camera x, skip
-		if lineWidth+clusterWidth > e.cameraX+w {
-			e.cameraGraphemeIndexMapper[cameraGraphemeIndex] = graphemeIndex
-			e.graphemeIndexMapper[graphemeIndex] = cameraGraphemeIndex
+		if lineWidth+clusterWidth > e.cameraX+w+1 {
 			graphemeIndex++
-			cameraGraphemeIndex++
 			lineWidth += 1
 			if clusterWidth > 1 && lineWidth == e.cameraX+w {
 				replacementCount = clusterWidth - 1
@@ -146,7 +139,9 @@ func (e *Editor) CalculateFields() {
 			replacementCount--
 		}
 		cameraGraphemeIndex++
-		b.WriteString(cluster)
+		if lineWidth+clusterWidth <= e.cameraX+w {
+			b.WriteString(cluster)
+		}
 		lineWidth += clusterWidth
 	}
 	e.cameraGraphemeIndexMapper[cameraGraphemeIndex] = graphemeIndex
@@ -201,7 +196,7 @@ func (e *Editor) MoveCursorRight() {
 			continue
 		}
 
-		e.viewModalFunc(fmt.Sprintf("%+v\n%+v\n%+v\n%+v", graphemeIndex, e.cameraGraphemeIndex, e.cameraGraphemeIndexMapper[e.cameraGraphemeIndex], e.cameraGraphemeIndexMapper))
+		// e.viewModalFunc(fmt.Sprintf("%+v\n%+v\n%+v\n%+v", graphemeIndex, e.cameraGraphemeIndex, e.cameraGraphemeIndexMapper[e.cameraGraphemeIndex], e.cameraGraphemeIndexMapper))
 		if e.cameraGraphemeIndexMapper[e.cameraGraphemeIndex] == graphemeIndex-1 {
 			isRightEdge = true
 		}
