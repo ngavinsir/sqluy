@@ -9,16 +9,17 @@ import (
 )
 
 type (
+	span struct {
+		runes []rune
+		width int
+	}
+
 	Editor struct {
 		*tview.Box
 
-		text                      string
-		cameraText                string
-		cameraGraphemeIndex       int
-		cameraX                   int
-		cameraY                   int
-		cameraGraphemeIndexMapper map[int]int
-		graphemeIndexMapper       map[int]int
+		text          string
+		spansPerLines [][]span
+		cursor        [2]int // row, grapheme index
 
 		viewModalFunc func(string)
 	}
@@ -27,126 +28,72 @@ type (
 func NewEditor() *Editor {
 	e := &Editor{
 		Box: tview.NewBox().SetBorder(true).SetTitle("Editor"),
-		// text: "😊😊  😊 😊 😊 😊\ntest\nhalo ini siapa\namsok",
-		text:                      "abc\n123456789\n😊😊",
-		cameraX:                   1,
-		cameraY:                   1,
-		cameraGraphemeIndexMapper: make(map[int]int),
-		graphemeIndexMapper:       make(map[int]int),
 	}
-	e.Box.SetRect(0, 0, 5, 3)
-	e.CalculateFields()
+	// e.SetText("abc\nde\nrsitenrstnrsyu\nrstn\na\nb\n\n\na")
+	e.SetText("😊😊  😊 😊 😊 😊\ntest\nhalo ini siapa\namsok", [2]int{0, 0})
 	// panic(fmt.Sprintf("%+v\n", e.cameraGraphemeIndexMapper))
 	return e
 }
 
+func (e *Editor) SetText(text string, cursor [2]int) *Editor {
+	clear(e.spansPerLines)
+
+	lines := strings.Split(text, "\n")
+	e.spansPerLines = make([][]span, len(lines))
+	e.cursor = cursor
+	e.text = text
+
+	for i, line := range lines {
+		text = line
+		spans := make([]span, uniseg.GraphemeClusterCount(text)+1)
+		state := -1
+		cluster := ""
+		boundaries := 0
+		j := 0
+		for text != "" {
+			cluster, text, boundaries, state = uniseg.StepString(text, state)
+
+			span := span{
+				width: boundaries >> uniseg.ShiftWidth,
+				runes: []rune(cluster),
+			}
+			spans[j] = span
+			j++
+		}
+		spans[j] = span{runes: nil, width: 1}
+		e.spansPerLines[i] = spans
+	}
+	// panic(errors.New(fmt.Sprintf("%+v\n", e.spansPerLines[0])))
+
+	return e
+}
+
 func (e *Editor) Draw(screen tcell.Screen) {
-	// panic(errors.New(fmt.Sprintf("%+v\n%+v\n%+v", e.cameraGraphemeIndex, e.cameraGraphemeIndexMapper[e.cameraGraphemeIndex], e.cameraGraphemeIndexMapper)))
 	e.Box.DrawForSubclass(screen, e)
 
 	x, y, _, _ := e.Box.GetInnerRect()
 
-	text := e.cameraText
-	state := -1
-	cluster := ""
-	textX, textY := x, y
-	boundaries := 0
-	for text != "" {
-		cluster, text, boundaries, state = uniseg.StepString(text, state)
-
-		if boundaries&uniseg.MaskLine == uniseg.LineMustBreak && text != "" {
-			textY++
-			textX = x
-			continue
+	textX := x
+	textY := y
+	for _, spans := range e.spansPerLines {
+		for _, span := range spans {
+			if span.runes == nil {
+				break
+			}
+			runes := span.runes
+			screen.SetContent(textX, textY, runes[0], runes[1:], tcell.StyleDefault.Foreground(tcell.ColorRed))
+			textX += int(span.width)
 		}
-
-		runes := []rune(cluster)
-		screen.SetContent(textX, textY, runes[0], runes[1:], tcell.StyleDefault.Foreground(tcell.ColorRed))
-		textX += boundaries >> uniseg.ShiftWidth
+		textY++
+		textX = x
 	}
 
+	cursorX := x
+	for _, span := range e.spansPerLines[e.cursor[0]][:e.cursor[1]] {
+		cursorX += span.width
+	}
 	screen.SetCursorStyle(tcell.CursorStyleBlinkingBar)
-	cursor := e.CursorFromGraphemeIndex(e.cameraGraphemeIndex)
-	screen.ShowCursor(cursor[0]+x, cursor[1]+y)
-}
-
-func (e *Editor) CalculateFields() {
-	var b strings.Builder
-
-	clear(e.cameraGraphemeIndexMapper)
-	clear(e.graphemeIndexMapper)
-	_, _, w, h := e.Box.GetInnerRect()
-	text := e.text
-	state := -1
-	cluster := ""
-	boundaries := 0
-	lineWidth := 0
-	y := 0
-	graphemeIndex := 0
-	cameraGraphemeIndex := 0
-	replacementCount := 0
-	for text != "" {
-		cluster, text, boundaries, state = uniseg.StepString(text, state)
-		clusterWidth := boundaries >> uniseg.ShiftWidth
-
-		if boundaries&uniseg.MaskLine == uniseg.LineMustBreak && text != "" {
-			if y >= e.cameraY {
-				e.cameraGraphemeIndexMapper[cameraGraphemeIndex] = graphemeIndex
-				e.graphemeIndexMapper[graphemeIndex] = cameraGraphemeIndex
-				cameraGraphemeIndex++
-				lineWidth = 0
-				b.WriteString(cluster)
-			}
-			graphemeIndex++
-			y++
-			continue
-		}
-
-		// line above or below camera y, skip
-		if y < e.cameraY || y >= e.cameraY+h {
-			graphemeIndex++
-			continue
-		}
-
-		// grapheme before camera x, skip
-		if lineWidth < e.cameraX {
-			graphemeIndex++
-			lineWidth += 1
-			if clusterWidth > 1 {
-				replacementCount = clusterWidth - 1
-				text = strings.Repeat("<", replacementCount) + text
-			}
-			continue
-		}
-
-		// grapheme after camera x, skip
-		if lineWidth+clusterWidth > e.cameraX+w+1 {
-			graphemeIndex++
-			lineWidth += 1
-			if clusterWidth > 1 && lineWidth == e.cameraX+w {
-				replacementCount = clusterWidth - 1
-				text = strings.Repeat(">", replacementCount) + text
-				lineWidth--
-			}
-			continue
-		}
-
-		e.cameraGraphemeIndexMapper[cameraGraphemeIndex] = graphemeIndex
-		e.graphemeIndexMapper[graphemeIndex] = cameraGraphemeIndex
-		if replacementCount <= 0 {
-			graphemeIndex++
-		} else {
-			replacementCount--
-		}
-		cameraGraphemeIndex++
-		if lineWidth+clusterWidth <= e.cameraX+w {
-			b.WriteString(cluster)
-		}
-		lineWidth += clusterWidth
-	}
-	e.cameraGraphemeIndexMapper[cameraGraphemeIndex] = graphemeIndex
-	e.graphemeIndexMapper[graphemeIndex] = cameraGraphemeIndex
-	e.cameraText = b.String()
+	screen.ShowCursor(cursorX, e.cursor[0]+y)
 }
 
 func (e *Editor) InputHandler() func(event *tcell.EventKey, setFocus func(p tview.Primitive)) {
@@ -166,251 +113,138 @@ func (e *Editor) InputHandler() func(event *tcell.EventKey, setFocus func(p tvie
 			// e.viewModalFunc(strconv.Itoa(e.cameraGraphemeIndex))
 		case tcell.KeyRune:
 			text := string(event.Rune())
-			e.ReplaceText(text, e.cameraGraphemeIndex, e.cameraGraphemeIndex)
-			e.cameraGraphemeIndex++
+			e.ReplaceText(text, e.cursor, e.cursor)
+			e.MoveCursorRight()
 		case tcell.KeyEnter:
-			e.ReplaceText("\n", e.cameraGraphemeIndex, e.cameraGraphemeIndex)
-			e.cameraGraphemeIndex++
+			e.ReplaceText("\n", e.cursor, e.cursor)
+			e.MoveCursorDown()
+			e.cursor[1] = 0
 		case tcell.KeyBackspace, tcell.KeyBackspace2:
-			e.ReplaceText("", e.cameraGraphemeIndex-1, e.cameraGraphemeIndex)
-			e.cameraGraphemeIndex--
+			if e.cursor[0] == 0 && e.cursor[1] == 0 {
+				return
+			}
+
+			from := [2]int{e.cursor[0], e.cursor[1] - 1}
+			until := e.cursor
+			if e.cursor[1] == 0 {
+				aboveRow := e.cursor[0] - 1
+				from = [2]int{aboveRow, len(e.spansPerLines[aboveRow]) - 1}
+				until = [2]int{e.cursor[0], 0}
+			}
+			e.ReplaceText("", from, until)
+			e.cursor = from
 		}
 	})
 }
 
 func (e *Editor) MoveCursorRight() {
-	lines := strings.Split(e.text, "\n")
-	cameraLines := strings.Split(e.cameraText, "\n")
-	cameraGraphemeIndex := 0
-	graphemeIndex := 0
-	isRightEdge := false
-
-	// defer func() {
-	// 	e.viewModalFunc(fmt.Sprintf("cmi: %+v\nis right edge: %+v\ncmi: %+v", cameraGraphemeIndex, isRightEdge, e.cameraGraphemeIndex))
-	// }()
-
-	for i := 0; i < len(lines); i++ {
-		graphemeIndex += uniseg.GraphemeClusterCount(lines[i]) + 1
-
-		if e.cameraGraphemeIndexMapper[e.cameraGraphemeIndex] >= graphemeIndex {
-			continue
-		}
-
-		// e.viewModalFunc(fmt.Sprintf("%+v\n%+v\n%+v\n%+v", graphemeIndex, e.cameraGraphemeIndex, e.cameraGraphemeIndexMapper[e.cameraGraphemeIndex], e.cameraGraphemeIndexMapper))
-		if e.cameraGraphemeIndexMapper[e.cameraGraphemeIndex] == graphemeIndex-1 {
-			isRightEdge = true
-		}
-		break
+	if e.cursor[1] >= len(e.spansPerLines[e.cursor[0]])-1 {
+		return
 	}
-
-	for i := 0; i < len(cameraLines); i++ {
-		cameraGraphemeIndex += uniseg.GraphemeClusterCount(cameraLines[i]) + 1
-
-		if e.cameraGraphemeIndex >= cameraGraphemeIndex {
-			continue
-		}
-
-		if e.cameraGraphemeIndex == cameraGraphemeIndex-1 {
-			if !isRightEdge {
-				realGraphemeIndex := e.cameraGraphemeIndexMapper[e.cameraGraphemeIndex]
-				e.cameraX++
-				e.CalculateFields()
-				e.cameraGraphemeIndex = e.graphemeIndexMapper[realGraphemeIndex] + 1
-				e.CalculateFields()
-			}
-			return
-		}
-		break
-	}
-
-	e.cameraGraphemeIndex++
-}
-
-func (e *Editor) MoveCursorDown() {
-	isTargetLine := false
-	curLineX := 0
-	lines := strings.Split(e.cameraText, "\n")
-	graphemeIndex := 0
-	for i := 0; i < len(lines); i++ {
-		l := uniseg.GraphemeClusterCount(lines[i]) + 1
-		if e.cameraGraphemeIndex >= graphemeIndex+l {
-			graphemeIndex += l
-			continue
-		}
-
-		if !isTargetLine && i >= len(lines)-1 {
-			if i < len(strings.Split(e.text, "\n"))-1 {
-				e.cameraY++
-				e.CalculateFields()
-			}
-			return
-		}
-
-		if isTargetLine {
-			text := lines[i]
-			state := -1
-			boundaries := 0
-			targetLineX := 0
-			for text != "" {
-				_, text, boundaries, state = uniseg.StepString(text, state)
-				x := boundaries >> uniseg.ShiftWidth
-				if targetLineX+x > curLineX {
-					break
-				}
-				targetLineX += x
-				graphemeIndex++
-			}
-			e.cameraGraphemeIndex = graphemeIndex
-			return
-		}
-
-		text := lines[i]
-		state := -1
-		boundaries := 0
-		curLineGraphemeIndex := graphemeIndex
-		for curLineGraphemeIndex < e.cameraGraphemeIndex {
-			_, text, boundaries, state = uniseg.StepString(text, state)
-			curLineX += boundaries >> uniseg.ShiftWidth
-			curLineGraphemeIndex++
-		}
-		graphemeIndex += l
-		isTargetLine = true
-	}
-}
-
-func (e *Editor) MoveCursorUp() {
-	isTargetLine := false
-	curLineX := 0
-	lines := strings.Split(e.cameraText, "\n")
-	graphemeIndex := uniseg.GraphemeClusterCount(e.cameraText)
-	for i := len(lines) - 1; i >= 0; i-- {
-		l := uniseg.GraphemeClusterCount(lines[i]) + 1
-		if e.cameraGraphemeIndex <= graphemeIndex-l {
-			graphemeIndex -= l
-			continue
-		}
-
-		if !isTargetLine && i == 0 {
-			if e.cameraY > 0 {
-				e.cameraY--
-				e.CalculateFields()
-			}
-			return
-		}
-
-		if isTargetLine {
-			text := lines[i]
-			state := -1
-			boundaries := 0
-			targetLineX := 0
-			graphemeIndex -= l
-			for text != "" {
-				_, text, boundaries, state = uniseg.StepString(text, state)
-				x := boundaries >> uniseg.ShiftWidth
-				if targetLineX+x >= curLineX {
-					break
-				}
-				targetLineX += x
-				graphemeIndex++
-			}
-			e.cameraGraphemeIndex = graphemeIndex
-			return
-		}
-
-		text := lines[i] + " "
-		state := -1
-		boundaries := 0
-		graphemeIndex -= l - 1
-		curLineGraphemeIndex := graphemeIndex
-		for curLineGraphemeIndex < e.cameraGraphemeIndex+1 {
-			_, text, boundaries, state = uniseg.StepString(text, state)
-			curLineX += boundaries >> uniseg.ShiftWidth
-			curLineGraphemeIndex++
-		}
-		isTargetLine = true
-	}
+	e.cursor[1]++
 }
 
 func (e *Editor) MoveCursorLeft() {
-	lines := strings.Split(e.cameraText, "\n")
-	graphemeIndex := 0
-	for i := 0; i < len(lines); i++ {
-		if e.cameraGraphemeIndex == graphemeIndex {
-			if e.cameraX > 0 {
-				e.cameraX--
-				e.CalculateFields()
-			}
-			return
-		}
-
-		graphemeIndex += uniseg.GraphemeClusterCount(lines[i]) + 1
-		if e.cameraGraphemeIndex >= graphemeIndex {
-			continue
-		}
+	if e.cursor[1] < 1 {
+		return
 	}
-
-	e.cameraGraphemeIndex--
+	e.cursor[1]--
 }
 
-func (e *Editor) ReplaceText(s string, fromGraphemeIndex, untilGraphemeIndex int) {
-	defer e.CalculateFields()
-
-	var b strings.Builder
-	// e.viewModalFunc(fmt.Sprintf("camera grapheme index: %d\nfrom grapheme index: %d\nuntil grapheme index: %d\nfrom mapped: %d\nuntil mapped: %d",
-	// 	e.cameraGraphemeIndex, fromGraphemeIndex, untilGraphemeIndex, e.cameraGraphemeIndexMapper[fromGraphemeIndex], e.cameraGraphemeIndexMapper[untilGraphemeIndex]))
-	fromGraphemeIndex = e.cameraGraphemeIndexMapper[fromGraphemeIndex]
-	untilGraphemeIndex = e.cameraGraphemeIndexMapper[untilGraphemeIndex]
-	state := -1
-	cluster := ""
-	graphemeIndex := 0
-	text := e.text
-
-	if text == "" {
-		e.text = s
+func (e *Editor) MoveCursorDown() {
+	if e.cursor[0] >= len(e.spansPerLines)-1 {
 		return
 	}
 
-	for text != "" {
-		if graphemeIndex == fromGraphemeIndex {
-			b.WriteString(s)
-			graphemeIndex++
-			continue
-		}
-
-		cluster, text, _, state = uniseg.StepString(text, state)
-
-		if graphemeIndex >= fromGraphemeIndex && graphemeIndex <= untilGraphemeIndex {
-			graphemeIndex++
-			continue
-		}
-
-		b.WriteString(cluster)
-		graphemeIndex++
-	}
-	if graphemeIndex == fromGraphemeIndex {
-		b.WriteString(s)
+	currentRowWidth := 0
+	for _, span := range e.spansPerLines[e.cursor[0]][:e.cursor[1]] {
+		currentRowWidth += span.width
 	}
 
-	e.text = b.String()
+	belowRowX := 0
+	belowRowWidth := 0
+	for _, span := range e.spansPerLines[e.cursor[0]+1] {
+		if span.runes == nil {
+			break
+		}
+		if belowRowWidth+span.width > currentRowWidth {
+			break
+		}
+		belowRowX++
+		belowRowWidth += span.width
+	}
+
+	e.cursor[0]++
+	e.cursor[1] = belowRowX
 }
 
-func (e *Editor) CursorFromGraphemeIndex(graphemeIndex int) [2]int {
-	lines := strings.Split(e.cameraText, "\n")
-	for i := 0; i < len(lines); i++ {
-		l := uniseg.GraphemeClusterCount(lines[i]) + 1
-		if graphemeIndex < l {
-			x := 0
-			text := lines[i]
-			state := -1
-			boundaries := 0
-			for graphemeIndex != 0 {
-				_, text, boundaries, state = uniseg.StepString(text, state)
-				x += boundaries >> uniseg.ShiftWidth
-				graphemeIndex--
-			}
-			return [2]int{x, i}
-		}
-		graphemeIndex -= l
+func (e *Editor) MoveCursorUp() {
+	if e.cursor[0] < 1 {
+		return
 	}
-	return [2]int{0, len(lines)}
+
+	currentRowWidth := 0
+	for _, span := range e.spansPerLines[e.cursor[0]][:e.cursor[1]] {
+		currentRowWidth += span.width
+	}
+
+	aboveRowX := 0
+	aboveRowWidth := 0
+	for _, span := range e.spansPerLines[e.cursor[0]-1] {
+		if span.runes == nil {
+			break
+		}
+		if aboveRowWidth+span.width > currentRowWidth {
+			break
+		}
+		aboveRowX++
+		aboveRowWidth += span.width
+	}
+
+	e.cursor[0]--
+	e.cursor[1] = aboveRowX
+}
+
+func (e *Editor) ReplaceText(s string, from, until [2]int) {
+	if from[0] > until[0] || from[0] == until[0] && from[1] > until[1] {
+		from, until = until, from
+	}
+
+	var b strings.Builder
+	lines := strings.Split(e.text, "\n")
+
+	// write left
+	for _, l := range lines[:from[0]] {
+		b.WriteString(l + "\n")
+	}
+
+	// write new text
+	// from row
+	for _, span := range e.spansPerLines[from[0]][:from[1]] {
+		b.WriteString(string(span.runes))
+	}
+	// new text
+	b.WriteString(s)
+	// until row
+	for _, span := range e.spansPerLines[until[0]][until[1]:] {
+		b.WriteString(string(span.runes))
+	}
+	if until[0] < len(lines)-1 {
+		b.WriteString("\n")
+	}
+
+	// write right
+	for i, l := range lines {
+		if i < until[0]+1 {
+			continue
+		}
+
+		b.WriteString(l)
+		if i < len(lines)-1 {
+			b.WriteString("\n")
+		}
+	}
+
+	// panic(errors.New(b.String()))
+	e.SetText(b.String(), e.cursor)
 }
