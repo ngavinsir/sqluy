@@ -459,7 +459,6 @@ func (e *Editor) Draw(screen tcell.Screen) {
 	// print line numbers
 	lineNumberDigit := len(strconv.Itoa(len(e.spansPerLines)))
 	lineNumberWidth := lineNumberDigit + 1
-	textX := x
 	textY := y
 	lastLine := e.offsets[0] + h
 	if lastLine > len(e.spansPerLines) {
@@ -468,16 +467,8 @@ func (e *Editor) Draw(screen tcell.Screen) {
 	for i, _ := range e.spansPerLines[e.offsets[0]:lastLine] {
 		lineNumber := i + e.offsets[0] + 1
 		lineNumberText := fmt.Sprintf("%*d", lineNumberDigit, lineNumber)
-		state := -1
-		cluster := ""
-		for lineNumberText != "" {
-			cluster, lineNumberText, _, state = uniseg.StepString(lineNumberText, state)
-			runes := []rune(cluster)
-			screen.SetContent(textX, textY, runes[0], runes[1:], tcell.StyleDefault.Foreground(tcell.ColorSlateGray))
-			textX++
-		}
+		tview.Print(screen, lineNumberText, x, textY, lineNumberWidth, tview.AlignLeft, tcell.ColorSlateGray)
 		textY++
-		textX = x
 	}
 	x += lineNumberWidth
 	w -= lineNumberWidth
@@ -488,7 +479,7 @@ func (e *Editor) Draw(screen tcell.Screen) {
 		e.offsets[1] = cursorX - w + 1
 	}
 
-	textX = x
+	textX := x
 	textY = y
 	lastLine = e.offsets[0] + h
 	if lastLine > len(e.spansPerLines) {
