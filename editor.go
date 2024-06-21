@@ -596,6 +596,22 @@ func (e *Editor) InputHandler() func(event *tcell.EventKey, setFocus func(p tvie
 					e.undoOffset--
 					e.SetText(undo.text, undo.cursor)
 					return
+				case 'o':
+					e.MoveCursorEndOfLine()
+					e.cursor[1]++
+					e.ReplaceText("\n", e.cursor, e.cursor)
+					e.MoveCursorDown()
+					e.cursor[1] = 0
+					e.SaveChanges()
+					e.undoOffset--
+					e.mode = insert
+				case 'O':
+					e.MoveCursorStartOfLine()
+					e.ReplaceText("\n", e.cursor, e.cursor)
+					e.cursor[1] = 0
+					e.SaveChanges()
+					e.undoOffset--
+					e.mode = insert
 				case 'a':
 					e.mode = insert
 					e.MoveCursorRight()
