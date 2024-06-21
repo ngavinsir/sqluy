@@ -560,6 +560,7 @@ func (e *Editor) Draw(screen tcell.Screen) {
 }
 
 func (e *Editor) InputHandler() func(event *tcell.EventKey, setFocus func(p tview.Primitive)) {
+	_, _, _, h := e.Box.GetInnerRect()
 	return e.Box.WrapInputHandler(func(event *tcell.EventKey, setFocus func(p tview.Primitive)) {
 		switch e.mode {
 		case normal:
@@ -584,8 +585,26 @@ func (e *Editor) InputHandler() func(event *tcell.EventKey, setFocus func(p tvie
 				redo := e.undoStack[e.undoOffset+2]
 				e.undoOffset++
 				e.SetText(redo.text, redo.cursor)
+			case tcell.KeyCtrlU:
+				distanceFromTop := e.cursor[0] - e.offsets[0]
+				e.MoveCursorHalfPageUp()
+				newRowOffset := e.cursor[0] - distanceFromTop
+				if newRowOffset > len(e.spansPerLines)-h {
+					newRowOffset = len(e.spansPerLines) - h
+				} else if newRowOffset < 0 {
+					newRowOffset = 0
+				}
+				e.offsets[0] = newRowOffset
 			case tcell.KeyCtrlD:
+				distanceFromTop := e.cursor[0] - e.offsets[0]
 				e.MoveCursorHalfPageDown()
+				newRowOffset := e.cursor[0] - distanceFromTop
+				if newRowOffset > len(e.spansPerLines)-h {
+					newRowOffset = len(e.spansPerLines) - h
+				} else if newRowOffset < 0 {
+					newRowOffset = 0
+				}
+				e.offsets[0] = newRowOffset
 			case tcell.KeyRune:
 				r := event.Rune()
 				switch r {
@@ -969,6 +988,49 @@ func (e *Editor) MoveCursorUp() {
 
 	e.cursor[0]--
 	e.cursor[1] = aboveRowX
+}
+
+func (e *Editor) MoveCursorHalfPageUp() {
+	_, _, _, h := e.Box.GetInnerRect()
+	h-- // exclude status line
+
+	if e.cursor[0] < 1 {
+		return
+	}
+
+	currentRowWidth := 0
+	for _, span := range e.spansPerLines[e.cursor[0]][:e.cursor[1]] {
+		currentRowWidth += span.width
+	}
+
+	blockOffset := 0
+	if e.mode == insert {
+		blockOffset = 1
+	}
+	halfPageUpRowX := 0
+	halfPageUpRowWidth := 0
+	halfPageUpIdx := e.cursor[0] - h/2
+	if halfPageUpIdx < 0 {
+		halfPageUpIdx = 0
+	}
+	halfPageUpRowSpans := e.spansPerLines[halfPageUpIdx]
+	maxOffset := len(halfPageUpRowSpans) - 2 + blockOffset
+	if maxOffset < 0 {
+		maxOffset = 0
+	}
+	for _, span := range halfPageUpRowSpans[:maxOffset] {
+		if span.runes == nil {
+			break
+		}
+		if halfPageUpRowWidth+span.width > currentRowWidth {
+			break
+		}
+		halfPageUpRowX++
+		halfPageUpRowWidth += span.width
+	}
+
+	e.cursor[0] = halfPageUpIdx
+	e.cursor[1] = halfPageUpRowX
 }
 
 func (e *Editor) MoveCursorFirstLine() {
