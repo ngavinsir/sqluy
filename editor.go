@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -676,6 +677,15 @@ func (e *Editor) InputHandler() func(event *tcell.EventKey, setFocus func(p tvie
 					return
 				case '0':
 					e.MoveCursorStartOfLine()
+					return
+				case '^':
+					rg := regexp.MustCompile(`\S`)
+					idx := rg.FindStringIndex(strings.Split(e.text, "\n")[e.cursor[0]])
+					if len(idx) == 0 {
+						e.cursor[1] = 0
+						return
+					}
+					e.cursor[1] = idx[0]
 					return
 				case 'r':
 					e.mode = replace
