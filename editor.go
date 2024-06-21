@@ -17,18 +17,32 @@ type (
 	}
 
 	Editor struct {
+		viewModalFunc func(string)
 		*tview.Box
-
 		text          string
 		spansPerLines [][]span
-		cursor        [2]int // row, grapheme index
-
-		offsets [2]int // row, column offsets
-
-		viewModalFunc func(string)
+		cursor        [2]int
+		offsets       [2]int
 		tabSize       int
+		mode          mode
 	}
 )
+
+type mode uint8
+
+const (
+	normal mode = iota
+	insert
+)
+
+func (m mode) String() string {
+	switch m {
+	case insert:
+		return "INSERT"
+	default:
+		return "NORMAL"
+	}
+}
 
 func NewEditor() *Editor {
 	e := &Editor{
@@ -410,6 +424,10 @@ func (e *Editor) Draw(screen tcell.Screen) {
 
 	x, y, w, h := e.Box.GetInnerRect()
 
+	// print mode
+	tview.Print(screen, fmt.Sprintf("%s mode", e.mode.String()), x, y+h-1, w, tview.AlignLeft, tcell.ColorDarkGreen)
+	h--
+
 	// fix offsets position so the cursor is visible
 	// cursor is above row offset, set row offset to cursor row
 	if e.cursor[0] < e.offsets[0] {
@@ -524,16 +542,12 @@ func (e *Editor) InputHandler() func(event *tcell.EventKey, setFocus func(p tvie
 		switch key := event.Key(); key {
 		case tcell.KeyLeft:
 			e.MoveCursorLeft()
-			// e.viewModalFunc(strconv.Itoa(e.cameraGraphemeIndex))
 		case tcell.KeyRight:
 			e.MoveCursorRight()
-			// e.viewModalFunc(strconv.Itoa(e.cameraGraphemeIndex))
 		case tcell.KeyDown:
 			e.MoveCursorDown()
-			// e.viewModalFunc(strconv.Itoa(e.cameraGraphemeIndex))
 		case tcell.KeyUp:
 			e.MoveCursorUp()
-			// e.viewModalFunc(strconv.Itoa(e.cameraGraphemeIndex))
 		case tcell.KeyRune:
 			text := string(event.Rune())
 			e.ReplaceText(text, e.cursor, e.cursor)

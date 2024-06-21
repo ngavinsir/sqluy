@@ -47,7 +47,7 @@ func main() {
 	wg.Add(1)
 	app := tview.NewApplication()
 	go modalLoop(ctx, modalChan, page, modal, app, &wg)
-	err := app.SetRoot(page, false).Run()
+	err := app.SetRoot(page, true).Run()
 	cancel()
 	wg.Wait()
 
