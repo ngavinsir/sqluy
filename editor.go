@@ -85,6 +85,13 @@ func (e *Editor) Draw(screen tcell.Screen) {
 	if e.cursor[0] >= e.offsets[0]+h {
 		e.offsets[0] = e.cursor[0] - h + 1
 	}
+	// adjust offset so there's no empty line
+	if e.offsets[0]+h > len(e.spansPerLines) {
+		e.offsets[0] = len(e.spansPerLines) - h
+		if e.offsets[0] < 0 {
+			e.offsets[0] = 0
+		}
+	}
 
 	cursorX := 0
 	for _, span := range e.spansPerLines[e.cursor[0]][:e.cursor[1]] {
@@ -104,7 +111,11 @@ func (e *Editor) Draw(screen tcell.Screen) {
 
 	textX := x
 	textY := y
-	for _, spans := range e.spansPerLines[e.offsets[0] : e.offsets[0]+h] {
+	lastLine := e.offsets[0] + h
+	if lastLine > len(e.spansPerLines) {
+		lastLine = len(e.spansPerLines)
+	}
+	for _, spans := range e.spansPerLines[e.offsets[0]:lastLine] {
 		for _, span := range spans {
 			// skip drawing end line sentinel
 			if span.runes == nil {
@@ -181,6 +192,7 @@ func (e *Editor) InputHandler() func(event *tcell.EventKey, setFocus func(p tvie
 			}
 			e.ReplaceText("", from, until)
 			e.cursor = from
+			// panic(errors.New(fmt.Sprintf("cursor: %+v\noffset: %+v\n", e.cursor, e.offsets)))
 		}
 	})
 }
@@ -295,6 +307,5 @@ func (e *Editor) ReplaceText(s string, from, until [2]int) {
 		}
 	}
 
-	// panic(errors.New(b.String()))
 	e.SetText(b.String(), e.cursor)
 }
