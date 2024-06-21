@@ -30,10 +30,10 @@ type (
 func NewEditor() *Editor {
 	e := &Editor{
 		Box:     tview.NewBox().SetBorder(true).SetTitle("Editor"),
-		offsets: [2]int{0, 0},
+		offsets: [2]int{0, 1},
 	}
 	// e.SetText("abc\nde\nrsitenrstnrsyu\nrstn\na\nb\n\n\na")
-	e.SetText("😊😊  😊 😊 😊 😊\ntest\nhalo ini siapa\namsok", [2]int{0, 1})
+	e.SetText("😊😊  😊 😊 😊 😊\ntest\nhalo ini siapa\namsok", [2]int{3, 0})
 	// panic(fmt.Sprintf("%+v\n", e.cameraGraphemeIndexMapper))
 	return e
 }
@@ -76,6 +76,32 @@ func (e *Editor) Draw(screen tcell.Screen) {
 
 	x, y, w, h := e.Box.GetInnerRect()
 
+	// fix offsets position so the cursor is visible
+	// cursor is above row offset, set row offset to cursor row
+	if e.cursor[0] < e.offsets[0] {
+		e.offsets[0] = e.cursor[0]
+	}
+	// cursor is below row offset
+	if e.cursor[0] >= e.offsets[0]+h {
+		e.offsets[0] = e.cursor[0] - h + 1
+	}
+
+	cursorX := 0
+	for _, span := range e.spansPerLines[e.cursor[0]][:e.cursor[1]] {
+		cursorX += span.width
+	}
+	// cursor is before column offset
+	if cursorX < e.offsets[1] {
+		e.offsets[1] = cursorX - 1
+		if e.offsets[1] < 0 {
+			e.offsets[1] = 0
+		}
+	}
+	// cursor is after column offset
+	if cursorX > e.offsets[1]+w {
+		e.offsets[1] = cursorX - w + 1
+	}
+
 	textX := x
 	textY := y
 	for _, spans := range e.spansPerLines[e.offsets[0] : e.offsets[0]+h] {
@@ -114,15 +140,8 @@ func (e *Editor) Draw(screen tcell.Screen) {
 		textX = x
 	}
 
-	cursorX := x
-	for _, span := range e.spansPerLines[e.cursor[0]][:e.cursor[1]] {
-		cursorX += span.width
-	}
-	if cursorX > x+w-e.offsets[1] {
-		cursorX = x + w + e.offsets[1]
-	}
 	screen.SetCursorStyle(tcell.CursorStyleBlinkingBar)
-	screen.ShowCursor(cursorX-e.offsets[1], e.cursor[0]+y-e.offsets[0])
+	screen.ShowCursor(cursorX+x-e.offsets[1], e.cursor[0]+y-e.offsets[0])
 }
 
 func (e *Editor) InputHandler() func(event *tcell.EventKey, setFocus func(p tview.Primitive)) {
@@ -167,17 +186,8 @@ func (e *Editor) InputHandler() func(event *tcell.EventKey, setFocus func(p tvie
 }
 
 func (e *Editor) MoveCursorRight() {
-	_, _, w, _ := e.Box.GetInnerRect()
 	if e.cursor[1] >= len(e.spansPerLines[e.cursor[0]])-1 {
 		return
-	}
-
-	currentRowWidth := 0
-	for _, span := range e.spansPerLines[e.cursor[0]][:e.cursor[1]] {
-		currentRowWidth += span.width
-	}
-	if currentRowWidth >= w {
-		e.offsets[1]++
 	}
 
 	e.cursor[1]++
@@ -187,20 +197,13 @@ func (e *Editor) MoveCursorLeft() {
 	if e.cursor[1] < 1 {
 		return
 	}
-	if e.cursor[1] <= e.offsets[1] {
-		e.offsets[1]--
-	}
 
 	e.cursor[1]--
 }
 
 func (e *Editor) MoveCursorDown() {
-	_, _, _, h := e.Box.GetInnerRect()
 	if e.cursor[0] >= len(e.spansPerLines)-1 {
 		return
-	}
-	if e.cursor[0] >= h-1 {
-		e.offsets[0]++
 	}
 
 	currentRowWidth := 0
@@ -228,9 +231,6 @@ func (e *Editor) MoveCursorDown() {
 func (e *Editor) MoveCursorUp() {
 	if e.cursor[0] < 1 {
 		return
-	}
-	if e.cursor[0] <= e.offsets[0] {
-		e.offsets[0]--
 	}
 
 	currentRowWidth := 0
