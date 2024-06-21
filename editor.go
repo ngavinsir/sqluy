@@ -563,6 +563,16 @@ func (e *Editor) InputHandler() func(event *tcell.EventKey, setFocus func(p tvie
 				e.MoveCursorDown()
 			case tcell.KeyUp:
 				e.MoveCursorUp()
+			case tcell.KeyCtrlR:
+				if len(e.undoStack) < 1 {
+					return
+				}
+				if e.undoOffset+1 >= len(e.undoStack)-1 {
+					return
+				}
+				redo := e.undoStack[e.undoOffset+2]
+				e.undoOffset++
+				e.SetText(redo.text, redo.cursor)
 			case tcell.KeyRune:
 				r := event.Rune()
 				switch r {
@@ -579,9 +589,12 @@ func (e *Editor) InputHandler() func(event *tcell.EventKey, setFocus func(p tvie
 					if len(e.undoStack) < 1 {
 						return
 					}
+					if e.undoOffset < 0 {
+						return
+					}
 					undo := e.undoStack[e.undoOffset]
 					e.undoOffset--
-					e.SetText(undo.text, e.cursor)
+					e.SetText(undo.text, undo.cursor)
 					return
 				case 'a':
 					e.mode = insert
@@ -661,13 +674,19 @@ func (e *Editor) InputHandler() func(event *tcell.EventKey, setFocus func(p tvie
 				text := string(event.Rune())
 				e.ReplaceText(text, e.cursor, e.cursor)
 				e.MoveCursorRight()
+				e.SaveChanges()
+				e.undoOffset--
 			case tcell.KeyEnter:
 				e.ReplaceText("\n", e.cursor, e.cursor)
 				e.MoveCursorDown()
 				e.cursor[1] = 0
+				e.SaveChanges()
+				e.undoOffset--
 			case tcell.KeyTab:
 				e.ReplaceText("\t", e.cursor, e.cursor)
 				e.MoveCursorRight()
+				e.SaveChanges()
+				e.undoOffset--
 			case tcell.KeyBackspace, tcell.KeyBackspace2:
 				if e.cursor[0] == 0 && e.cursor[1] == 0 {
 					return
@@ -682,6 +701,8 @@ func (e *Editor) InputHandler() func(event *tcell.EventKey, setFocus func(p tvie
 				}
 				e.ReplaceText("", from, until)
 				e.cursor = from
+				e.SaveChanges()
+				e.undoOffset--
 				// panic(errors.New(fmt.Sprintf("cursor: %+v\noffset: %+v\n", e.cursor, e.offsets)))
 			}
 		}
@@ -895,6 +916,11 @@ func (e *Editor) ReplaceText(s string, from, until [2]int) {
 		}
 	}
 
+	e.SaveChanges()
+	e.SetText(b.String(), e.cursor)
+}
+
+func (e *Editor) SaveChanges() {
 	maxUndoOffset := e.undoOffset + 1
 	if maxUndoOffset > len(e.undoStack) {
 		maxUndoOffset = len(e.undoStack)
@@ -905,5 +931,4 @@ func (e *Editor) ReplaceText(s string, from, until [2]int) {
 		cursor: [2]int{e.cursor[0], e.cursor[1]},
 	})
 	e.undoOffset = maxUndoOffset
-	e.SetText(b.String(), e.cursor)
 }
