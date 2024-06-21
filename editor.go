@@ -25,6 +25,7 @@ type (
 		offsets       [2]int
 		tabSize       int
 		mode          mode
+		pending       string
 	}
 )
 
@@ -425,7 +426,10 @@ func (e *Editor) Draw(screen tcell.Screen) {
 	x, y, w, h := e.Box.GetInnerRect()
 
 	// print mode
-	tview.Print(screen, fmt.Sprintf("%s mode", e.mode.String()), x, y+h-1, w, tview.AlignLeft, tcell.ColorDarkGreen)
+	_, modeWidth := tview.Print(screen, fmt.Sprintf("%s mode", e.mode.String()), x, y+h-1, w, tview.AlignLeft, tcell.ColorDarkGreen)
+	if e.pending != "" {
+		tview.Print(screen, "("+e.pending+")", x+modeWidth+1, y+h-1, w-(x+modeWidth), tview.AlignLeft, tcell.ColorYellow)
+	}
 	h--
 
 	// fix offsets position so the cursor is visible
@@ -516,7 +520,7 @@ func (e *Editor) Draw(screen tcell.Screen) {
 				width = c
 			}
 			if runes[0] != '\t' {
-				screen.SetContent(textX-e.offsets[1], textY, runes[0], runes[1:], tcell.StyleDefault.Foreground(tcell.ColorRed))
+				screen.SetContent(textX-e.offsets[1], textY, runes[0], runes[1:], tcell.StyleDefault.Foreground(tcell.ColorWhite))
 			}
 			textX += width
 		}
@@ -524,57 +528,126 @@ func (e *Editor) Draw(screen tcell.Screen) {
 		textX = x
 	}
 
-	screen.SetCursorStyle(tcell.CursorStyleBlinkingBar)
+	cursorStyle := tcell.CursorStyleSteadyBlock
+	if e.mode == insert {
+		cursorStyle = tcell.CursorStyleSteadyBar
+	}
+	screen.SetCursorStyle(cursorStyle)
 	screen.ShowCursor(cursorX+x-e.offsets[1], e.cursor[0]+y-e.offsets[0])
 }
 
 func (e *Editor) InputHandler() func(event *tcell.EventKey, setFocus func(p tview.Primitive)) {
 	return e.Box.WrapInputHandler(func(event *tcell.EventKey, setFocus func(p tview.Primitive)) {
-		switch key := event.Key(); key {
-		case tcell.KeyLeft:
-			e.MoveCursorLeft()
-		case tcell.KeyRight:
-			e.MoveCursorRight()
-		case tcell.KeyDown:
-			e.MoveCursorDown()
-		case tcell.KeyUp:
-			e.MoveCursorUp()
-		case tcell.KeyRune:
-			text := string(event.Rune())
-			e.ReplaceText(text, e.cursor, e.cursor)
-			e.MoveCursorRight()
-		case tcell.KeyEnter:
-			e.ReplaceText("\n", e.cursor, e.cursor)
-			e.MoveCursorDown()
-			e.cursor[1] = 0
-		case tcell.KeyTab:
-			e.ReplaceText("\t", e.cursor, e.cursor)
-			e.MoveCursorRight()
-		case tcell.KeyBackspace, tcell.KeyBackspace2:
-			if e.cursor[0] == 0 && e.cursor[1] == 0 {
-				return
+		switch e.mode {
+		case normal:
+			switch key := event.Key(); key {
+			case tcell.KeyEsc:
+				e.pending = ""
+			case tcell.KeyLeft:
+				e.MoveCursorLeft()
+			case tcell.KeyRight:
+				e.MoveCursorRight()
+			case tcell.KeyDown:
+				e.MoveCursorDown()
+			case tcell.KeyUp:
+				e.MoveCursorUp()
+			case tcell.KeyRune:
+				switch r := event.Rune(); r {
+				case 'i':
+					e.mode = insert
+				case 'a':
+					e.mode = insert
+					e.MoveCursorRight()
+				case 'A':
+					e.mode = insert
+					e.MoveCursorEndOfLine()
+				case 'G':
+					e.MoveCursorLastLine()
+				case 'g':
+					if e.pending == "g" {
+						e.MoveCursorFirstLine()
+						e.pending = ""
+						return
+					}
+					fallthrough
+				default:
+					e.pending += string(r)
+				}
+			case tcell.KeyEnter:
+				// e.ReplaceText("\n", e.cursor, e.cursor)
+				// e.MoveCursorDown()
+				// e.cursor[1] = 0
+			case tcell.KeyTab:
+				// e.ReplaceText("\t", e.cursor, e.cursor)
+				// e.MoveCursorRight()
+			case tcell.KeyBackspace, tcell.KeyBackspace2:
+				//
 			}
+		case insert:
+			switch key := event.Key(); key {
+			case tcell.KeyEsc:
+				e.mode = normal
+				if e.cursor[1] == len(e.spansPerLines[e.cursor[0]])-1 {
+					e.MoveCursorLeft()
+				}
+			case tcell.KeyLeft:
+				e.MoveCursorLeft()
+			case tcell.KeyRight:
+				e.MoveCursorRight()
+			case tcell.KeyDown:
+				e.MoveCursorDown()
+			case tcell.KeyUp:
+				e.MoveCursorUp()
+			case tcell.KeyRune:
+				text := string(event.Rune())
+				e.ReplaceText(text, e.cursor, e.cursor)
+				e.MoveCursorRight()
+			case tcell.KeyEnter:
+				e.ReplaceText("\n", e.cursor, e.cursor)
+				e.MoveCursorDown()
+				e.cursor[1] = 0
+			case tcell.KeyTab:
+				e.ReplaceText("\t", e.cursor, e.cursor)
+				e.MoveCursorRight()
+			case tcell.KeyBackspace, tcell.KeyBackspace2:
+				if e.cursor[0] == 0 && e.cursor[1] == 0 {
+					return
+				}
 
-			from := [2]int{e.cursor[0], e.cursor[1] - 1}
-			until := e.cursor
-			if e.cursor[1] == 0 {
-				aboveRow := e.cursor[0] - 1
-				from = [2]int{aboveRow, len(e.spansPerLines[aboveRow]) - 1}
-				until = [2]int{e.cursor[0], 0}
+				from := [2]int{e.cursor[0], e.cursor[1] - 1}
+				until := e.cursor
+				if e.cursor[1] == 0 {
+					aboveRow := e.cursor[0] - 1
+					from = [2]int{aboveRow, len(e.spansPerLines[aboveRow]) - 1}
+					until = [2]int{e.cursor[0], 0}
+				}
+				e.ReplaceText("", from, until)
+				e.cursor = from
+				// panic(errors.New(fmt.Sprintf("cursor: %+v\noffset: %+v\n", e.cursor, e.offsets)))
 			}
-			e.ReplaceText("", from, until)
-			e.cursor = from
-			// panic(errors.New(fmt.Sprintf("cursor: %+v\noffset: %+v\n", e.cursor, e.offsets)))
 		}
 	})
 }
 
 func (e *Editor) MoveCursorRight() {
-	if e.cursor[1] >= len(e.spansPerLines[e.cursor[0]])-1 {
+	normalOffset := 1
+	if e.mode == insert {
+		normalOffset = 0
+	}
+	if e.cursor[1]+normalOffset >= len(e.spansPerLines[e.cursor[0]])-1 {
 		return
 	}
 
 	e.cursor[1]++
+}
+
+func (e *Editor) MoveCursorEndOfLine() {
+	normalOffset := 1
+	if e.mode == insert {
+		normalOffset = 0
+	}
+
+	e.cursor[1] = len(e.spansPerLines[e.cursor[0]]) - 1 + normalOffset
 }
 
 func (e *Editor) MoveCursorLeft() {
@@ -612,6 +685,33 @@ func (e *Editor) MoveCursorDown() {
 	e.cursor[1] = belowRowX
 }
 
+func (e *Editor) MoveCursorLastLine() {
+	if e.cursor[0] >= len(e.spansPerLines)-2 {
+		return
+	}
+
+	currentRowWidth := 0
+	for _, span := range e.spansPerLines[e.cursor[0]][:e.cursor[1]] {
+		currentRowWidth += span.width
+	}
+
+	lastRowX := 0
+	lastRowWidth := 0
+	for _, span := range e.spansPerLines[len(e.spansPerLines)-1] {
+		if span.runes == nil {
+			break
+		}
+		if lastRowWidth+span.width > currentRowWidth {
+			break
+		}
+		lastRowX++
+		lastRowWidth += span.width
+	}
+
+	e.cursor[0] = len(e.spansPerLines) - 1
+	e.cursor[1] = lastRowX
+}
+
 func (e *Editor) MoveCursorUp() {
 	if e.cursor[0] < 1 {
 		return
@@ -637,6 +737,33 @@ func (e *Editor) MoveCursorUp() {
 
 	e.cursor[0]--
 	e.cursor[1] = aboveRowX
+}
+
+func (e *Editor) MoveCursorFirstLine() {
+	if e.cursor[0] <= 1 {
+		return
+	}
+
+	currentRowWidth := 0
+	for _, span := range e.spansPerLines[e.cursor[0]][:e.cursor[1]] {
+		currentRowWidth += span.width
+	}
+
+	firstRowX := 0
+	firstRowWidth := 0
+	for _, span := range e.spansPerLines[0] {
+		if span.runes == nil {
+			break
+		}
+		if firstRowWidth+span.width > currentRowWidth {
+			break
+		}
+		firstRowX++
+		firstRowWidth += span.width
+	}
+
+	e.cursor[0] = 0
+	e.cursor[1] = firstRowX
 }
 
 func (e *Editor) ReplaceText(s string, from, until [2]int) {
