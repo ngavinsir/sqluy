@@ -20,12 +20,16 @@ type (
 		viewModalFunc func(string)
 		*tview.Box
 		text          string
-		spansPerLines [][]span
-		cursor        [2]int
-		offsets       [2]int
-		tabSize       int
-		mode          mode
 		pending       string
+		spansPerLines [][]span
+		undoStack     []struct {
+			text   string
+			cursor [2]int
+		}
+		cursor  [2]int
+		offsets [2]int
+		tabSize int
+		mode    mode
 	}
 )
 
@@ -34,12 +38,15 @@ type mode uint8
 const (
 	normal mode = iota
 	insert
+	replace
 )
 
 func (m mode) String() string {
 	switch m {
 	case insert:
 		return "INSERT"
+	case replace:
+		return "REPLACE"
 	default:
 		return "NORMAL"
 	}
@@ -531,6 +538,8 @@ func (e *Editor) Draw(screen tcell.Screen) {
 	cursorStyle := tcell.CursorStyleSteadyBlock
 	if e.mode == insert {
 		cursorStyle = tcell.CursorStyleSteadyBar
+	} else if e.mode == replace {
+		cursorStyle = tcell.CursorStyleSteadyUnderline
 	}
 	screen.SetCursorStyle(cursorStyle)
 	screen.ShowCursor(cursorX+x-e.offsets[1], e.cursor[0]+y-e.offsets[0])
@@ -577,6 +586,9 @@ func (e *Editor) InputHandler() func(event *tcell.EventKey, setFocus func(p tvie
 				case '0':
 					e.MoveCursorStartOfLine()
 					return
+				case 'r':
+					e.mode = replace
+					return
 				case 'G':
 					e.MoveCursorLastLine()
 					return
@@ -598,6 +610,27 @@ func (e *Editor) InputHandler() func(event *tcell.EventKey, setFocus func(p tvie
 			case tcell.KeyBackspace, tcell.KeyBackspace2:
 				//
 			}
+
+		case replace:
+			switch key := event.Key(); key {
+			case tcell.KeyEsc:
+				e.mode = normal
+			case tcell.KeyLeft:
+				e.MoveCursorLeft()
+			case tcell.KeyRight:
+				e.MoveCursorRight()
+			case tcell.KeyDown:
+				e.MoveCursorDown()
+			case tcell.KeyUp:
+				e.MoveCursorUp()
+			case tcell.KeyRune:
+				text := string(event.Rune())
+				from := e.cursor
+				until := [2]int{e.cursor[0], e.cursor[1] + 1}
+				e.ReplaceText(text, from, until)
+				e.mode = normal
+			}
+
 		case insert:
 			switch key := event.Key(); key {
 			case tcell.KeyEsc:
@@ -645,11 +678,11 @@ func (e *Editor) InputHandler() func(event *tcell.EventKey, setFocus func(p tvie
 }
 
 func (e *Editor) MoveCursorRight() {
-	normalOffset := 1
+	blockOffset := 1
 	if e.mode == insert {
-		normalOffset = 0
+		blockOffset = 0
 	}
-	if e.cursor[1]+normalOffset >= len(e.spansPerLines[e.cursor[0]])-1 {
+	if e.cursor[1]+blockOffset >= len(e.spansPerLines[e.cursor[0]])-1 {
 		return
 	}
 
@@ -661,12 +694,12 @@ func (e *Editor) MoveCursorEndOfLine() {
 		return
 	}
 
-	normalOffset := 0
+	blockOffset := 0
 	if e.mode == insert {
-		normalOffset = 1
+		blockOffset = 1
 	}
 
-	e.cursor[1] = len(e.spansPerLines[e.cursor[0]]) - 2 + normalOffset
+	e.cursor[1] = len(e.spansPerLines[e.cursor[0]]) - 2 + blockOffset
 }
 
 func (e *Editor) MoveCursorLeft() {
@@ -695,14 +728,14 @@ func (e *Editor) MoveCursorDown() {
 		currentRowWidth += span.width
 	}
 
-	normalOffset := 0
+	blockOffset := 0
 	if e.mode == insert {
-		normalOffset = 1
+		blockOffset = 1
 	}
 	belowRowX := 0
 	belowRowWidth := 0
 	belowRowSpans := e.spansPerLines[e.cursor[0]+1]
-	maxOffset := len(belowRowSpans) - 2 + normalOffset
+	maxOffset := len(belowRowSpans) - 2 + blockOffset
 	if maxOffset < 0 {
 		maxOffset = 0
 	}
@@ -758,14 +791,14 @@ func (e *Editor) MoveCursorUp() {
 		currentRowWidth += span.width
 	}
 
-	normalOffset := 0
+	blockOffset := 0
 	if e.mode == insert {
-		normalOffset = 1
+		blockOffset = 1
 	}
 	aboveRowX := 0
 	aboveRowWidth := 0
 	aboveRowSpans := e.spansPerLines[e.cursor[0]-1]
-	maxOffset := len(aboveRowSpans) - 2 + normalOffset
+	maxOffset := len(aboveRowSpans) - 2 + blockOffset
 	if maxOffset < 0 {
 		maxOffset = 0
 	}
