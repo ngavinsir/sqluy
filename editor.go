@@ -612,6 +612,25 @@ func (e *Editor) InputHandler() func(event *tcell.EventKey, setFocus func(p tvie
 					e.SaveChanges()
 					e.undoOffset--
 					e.mode = insert
+				case 'd':
+					if e.pending == "d" {
+						e.pending = ""
+						if len(e.spansPerLines) <= 1 {
+							return
+						}
+						from := [2]int{e.cursor[0], 0}
+						until := [2]int{e.cursor[0] + 1, 0}
+						if e.cursor[0] == len(e.spansPerLines)-1 {
+							aboveRow := e.cursor[0] - 1
+							from = [2]int{aboveRow, len(e.spansPerLines[aboveRow]) - 1}
+							until = [2]int{e.cursor[0], 0}
+						}
+						e.ReplaceText("", from, until)
+						e.cursor[0]--
+						e.SaveChanges()
+						e.undoOffset--
+						return
+					}
 				case 'a':
 					e.mode = insert
 					e.MoveCursorRight()
