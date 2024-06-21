@@ -42,7 +42,7 @@ func main() {
 
 	page.AddPage("main", e, true, true)
 	page.AddPage("modal", modalFlex, true, false)
-	page.SetRect(0, 0, 7, 5)
+	page.SetRect(0, 0, 15, 8)
 
 	wg.Add(1)
 	app := tview.NewApplication()
