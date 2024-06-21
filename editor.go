@@ -436,9 +436,19 @@ func (e *Editor) Draw(screen tcell.Screen) {
 	x, y, w, h := e.Box.GetInnerRect()
 
 	// print mode
-	_, modeWidth := tview.Print(screen, fmt.Sprintf("%s mode", e.mode.String()), x, y+h-1, w, tview.AlignLeft, tcell.ColorDarkGreen)
+	modeColor := tcell.ColorLightGray
+	// modeBg := tcell.ColorWhite
+	if e.mode == insert {
+		modeColor = tcell.ColorGreen
+		// modeBg = tcell.ColorLightGreen
+	} else if e.mode == replace {
+		modeColor = tcell.ColorPink
+		// modeBg = tcell.ColorPurple
+	}
+	_, modeWidth := tview.Print(screen, e.mode.String(), x, y+h-1, w, tview.AlignLeft, modeColor)
+	_, modeTxtWidth := tview.Print(screen, " mode", x+modeWidth, y+h-1, w-modeWidth, tview.AlignLeft, tcell.ColorWhite)
 	if e.pending != "" {
-		tview.Print(screen, "("+e.pending+")", x+modeWidth+1, y+h-1, w-(x+modeWidth), tview.AlignLeft, tcell.ColorYellow)
+		tview.Print(screen, "("+e.pending+")", x+modeWidth+modeTxtWidth+1, y+h-1, w-(x+modeWidth+modeTxtWidth), tview.AlignLeft, tcell.ColorYellow)
 	}
 	h--
 
@@ -623,7 +633,7 @@ func (e *Editor) InputHandler() func(event *tcell.EventKey, setFocus func(p tvie
 						if e.cursor[0] == len(e.spansPerLines)-1 {
 							aboveRow := e.cursor[0] - 1
 							from = [2]int{aboveRow, len(e.spansPerLines[aboveRow]) - 1}
-							until = [2]int{e.cursor[0], 0}
+							until = [2]int{e.cursor[0], len(e.spansPerLines[e.cursor[0]]) - 1}
 						}
 						e.ReplaceText("", from, until)
 						e.cursor[0]--
