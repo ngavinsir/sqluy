@@ -11,6 +11,11 @@ import (
 )
 
 type (
+	undoStackItem struct {
+		text   string
+		cursor [2]int
+	}
+
 	span struct {
 		runes []rune
 		width int
@@ -22,14 +27,12 @@ type (
 		text          string
 		pending       string
 		spansPerLines [][]span
-		undoStack     []struct {
-			text   string
-			cursor [2]int
-		}
-		cursor  [2]int
-		offsets [2]int
-		tabSize int
-		mode    mode
+		undoStack     []undoStackItem
+		undoOffset    int
+		cursor        [2]int
+		offsets       [2]int
+		tabSize       int
+		mode          mode
 	}
 )
 
@@ -572,6 +575,14 @@ func (e *Editor) InputHandler() func(event *tcell.EventKey, setFocus func(p tvie
 					e.ReplaceText("", from, until)
 					e.cursor = from
 					return
+				case 'u':
+					if len(e.undoStack) < 1 {
+						return
+					}
+					undo := e.undoStack[e.undoOffset]
+					e.undoOffset--
+					e.SetText(undo.text, e.cursor)
+					return
 				case 'a':
 					e.mode = insert
 					e.MoveCursorRight()
@@ -884,5 +895,15 @@ func (e *Editor) ReplaceText(s string, from, until [2]int) {
 		}
 	}
 
+	maxUndoOffset := e.undoOffset + 1
+	if maxUndoOffset > len(e.undoStack) {
+		maxUndoOffset = len(e.undoStack)
+	}
+	e.undoStack = e.undoStack[:maxUndoOffset]
+	e.undoStack = append(e.undoStack, undoStackItem{
+		text:   e.text,
+		cursor: [2]int{e.cursor[0], e.cursor[1]},
+	})
+	e.undoOffset = maxUndoOffset
 	e.SetText(b.String(), e.cursor)
 }
