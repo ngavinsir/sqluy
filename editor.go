@@ -552,27 +552,42 @@ func (e *Editor) InputHandler() func(event *tcell.EventKey, setFocus func(p tvie
 			case tcell.KeyUp:
 				e.MoveCursorUp()
 			case tcell.KeyRune:
-				switch r := event.Rune(); r {
+				r := event.Rune()
+				switch r {
 				case 'i':
 					e.mode = insert
+					return
+				case 'x':
+					from := e.cursor
+					until := [2]int{e.cursor[0], e.cursor[1] + 1}
+					e.ReplaceText("", from, until)
+					e.cursor = from
+					return
 				case 'a':
 					e.mode = insert
 					e.MoveCursorRight()
+					return
 				case 'A':
 					e.mode = insert
 					e.MoveCursorEndOfLine()
+					return
+				case '$':
+					e.MoveCursorEndOfLine()
+					return
+				case '0':
+					e.MoveCursorStartOfLine()
+					return
 				case 'G':
 					e.MoveCursorLastLine()
+					return
 				case 'g':
 					if e.pending == "g" {
 						e.MoveCursorFirstLine()
 						e.pending = ""
 						return
 					}
-					fallthrough
-				default:
-					e.pending += string(r)
 				}
+				e.pending += string(r)
 			case tcell.KeyEnter:
 				// e.ReplaceText("\n", e.cursor, e.cursor)
 				// e.MoveCursorDown()
@@ -642,12 +657,16 @@ func (e *Editor) MoveCursorRight() {
 }
 
 func (e *Editor) MoveCursorEndOfLine() {
-	normalOffset := 1
-	if e.mode == insert {
-		normalOffset = 0
+	if e.cursor[1] >= len(e.spansPerLines[e.cursor[0]])-1 {
+		return
 	}
 
-	e.cursor[1] = len(e.spansPerLines[e.cursor[0]]) - 1 + normalOffset
+	normalOffset := 0
+	if e.mode == insert {
+		normalOffset = 1
+	}
+
+	e.cursor[1] = len(e.spansPerLines[e.cursor[0]]) - 2 + normalOffset
 }
 
 func (e *Editor) MoveCursorLeft() {
@@ -656,6 +675,14 @@ func (e *Editor) MoveCursorLeft() {
 	}
 
 	e.cursor[1]--
+}
+
+func (e *Editor) MoveCursorStartOfLine() {
+	if e.cursor[1] < 1 {
+		return
+	}
+
+	e.cursor[1] = 0
 }
 
 func (e *Editor) MoveCursorDown() {
@@ -668,9 +695,18 @@ func (e *Editor) MoveCursorDown() {
 		currentRowWidth += span.width
 	}
 
+	normalOffset := 0
+	if e.mode == insert {
+		normalOffset = 1
+	}
 	belowRowX := 0
 	belowRowWidth := 0
-	for _, span := range e.spansPerLines[e.cursor[0]+1] {
+	belowRowSpans := e.spansPerLines[e.cursor[0]+1]
+	maxOffset := len(belowRowSpans) - 2 + normalOffset
+	if maxOffset < 0 {
+		maxOffset = 0
+	}
+	for _, span := range belowRowSpans[:maxOffset] {
 		if span.runes == nil {
 			break
 		}
@@ -722,9 +758,18 @@ func (e *Editor) MoveCursorUp() {
 		currentRowWidth += span.width
 	}
 
+	normalOffset := 0
+	if e.mode == insert {
+		normalOffset = 1
+	}
 	aboveRowX := 0
 	aboveRowWidth := 0
-	for _, span := range e.spansPerLines[e.cursor[0]-1] {
+	aboveRowSpans := e.spansPerLines[e.cursor[0]-1]
+	maxOffset := len(aboveRowSpans) - 2 + normalOffset
+	if maxOffset < 0 {
+		maxOffset = 0
+	}
+	for _, span := range aboveRowSpans[:maxOffset] {
 		if span.runes == nil {
 			break
 		}
