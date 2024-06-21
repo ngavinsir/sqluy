@@ -584,6 +584,8 @@ func (e *Editor) InputHandler() func(event *tcell.EventKey, setFocus func(p tvie
 				redo := e.undoStack[e.undoOffset+2]
 				e.undoOffset++
 				e.SetText(redo.text, redo.cursor)
+			case tcell.KeyCtrlD:
+				e.MoveCursorHalfPageDown()
 			case tcell.KeyRune:
 				r := event.Rune()
 				switch r {
@@ -685,7 +687,7 @@ func (e *Editor) InputHandler() func(event *tcell.EventKey, setFocus func(p tvie
 						e.cursor[1] = 0
 						return
 					}
-					e.cursor[1] = idx[0]
+
 					return
 				case 'r':
 					e.mode = replace
@@ -861,6 +863,49 @@ func (e *Editor) MoveCursorDown() {
 
 	e.cursor[0]++
 	e.cursor[1] = belowRowX
+}
+
+func (e *Editor) MoveCursorHalfPageDown() {
+	_, _, _, h := e.Box.GetInnerRect()
+	h-- // exclude status line
+
+	if e.cursor[0] >= len(e.spansPerLines)-1 {
+		return
+	}
+
+	currentRowWidth := 0
+	for _, span := range e.spansPerLines[e.cursor[0]][:e.cursor[1]] {
+		currentRowWidth += span.width
+	}
+
+	blockOffset := 0
+	if e.mode == insert {
+		blockOffset = 1
+	}
+	halfPageDownRowX := 0
+	halfPageDownRowWidth := 0
+	halfPageDownIdx := e.cursor[0] + h/2
+	if halfPageDownIdx > len(e.spansPerLines)-1 {
+		halfPageDownIdx = len(e.spansPerLines) - 1
+	}
+	halfPageDownRowSpans := e.spansPerLines[halfPageDownIdx]
+	maxOffset := len(halfPageDownRowSpans) - 2 + blockOffset
+	if maxOffset < 0 {
+		maxOffset = 0
+	}
+	for _, span := range halfPageDownRowSpans[:maxOffset] {
+		if span.runes == nil {
+			break
+		}
+		if halfPageDownRowWidth+span.width > currentRowWidth {
+			break
+		}
+		halfPageDownRowX++
+		halfPageDownRowWidth += span.width
+	}
+
+	e.cursor[0] = halfPageDownIdx
+	e.cursor[1] = halfPageDownRowX
 }
 
 func (e *Editor) MoveCursorLastLine() {
