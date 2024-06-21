@@ -26,19 +26,21 @@ type (
 		offsets [2]int // row, column offsets
 
 		viewModalFunc func(string)
+		tabSize       int
 	}
 )
 
 func NewEditor() *Editor {
 	e := &Editor{
-		Box: tview.NewBox().SetBorder(true).SetTitle("Editor"),
+		tabSize: 4,
+		Box:     tview.NewBox().SetBorder(true).SetTitle("Editor"),
 	}
-	// e.SetText("😊😊  😊 😊 😊 😊\ntest\nhalo ini siapa\namsok", [2]int{3, 0})
+	// e.SetText("😊😊  😊 😊 😊 😊\n  test\nhalo ini siapa\namsok", [2]int{3, 0})
 	e.SetText(`
 	package main
 
 	import (
-	  "fmt"
+		"fmt"
 		"strconv"
 		"strings"
 
@@ -384,8 +386,12 @@ func (e *Editor) SetText(text string, cursor [2]int) *Editor {
 		for text != "" {
 			cluster, text, boundaries, state = uniseg.StepString(text, state)
 
+			width := boundaries >> uniseg.ShiftWidth
+			if cluster == "\t" {
+				width = e.tabSize
+			}
 			span := span{
-				width: boundaries >> uniseg.ShiftWidth,
+				width: width,
 				runes: []rune(cluster),
 			}
 			spans[j] = span
@@ -489,18 +495,20 @@ func (e *Editor) Draw(screen tcell.Screen) {
 
 			runes := span.runes
 			width := span.width
-			// replace too wide grapheme on the left edge
-			if textX < x+e.offsets[1] && textX+width > x+e.offsets[1] {
+			// replace too wide grapheme on the left edge that's not a tab
+			if textX < x+e.offsets[1] && textX+width > x+e.offsets[1] && runes[0] != '\t' {
 				c := textX + width - (x + e.offsets[1])
 				runes = []rune(strings.Repeat("<", c))
 				textX += width - c
 				width = c
-			} else if textX+width > x+e.offsets[1]+w { // too wide grapheme on the right edge
+			} else if textX+width > x+e.offsets[1]+w && runes[0] != '\t' { // too wide grapheme on the right edge that's not a tab
 				c := (x + e.offsets[1] + w) - textX
 				runes = []rune(strings.Repeat(">", c))
 				width = c
 			}
-			screen.SetContent(textX-e.offsets[1], textY, runes[0], runes[1:], tcell.StyleDefault.Foreground(tcell.ColorRed))
+			if runes[0] != '\t' {
+				screen.SetContent(textX-e.offsets[1], textY, runes[0], runes[1:], tcell.StyleDefault.Foreground(tcell.ColorRed))
+			}
 			textX += width
 		}
 		textY++
@@ -534,6 +542,9 @@ func (e *Editor) InputHandler() func(event *tcell.EventKey, setFocus func(p tvie
 			e.ReplaceText("\n", e.cursor, e.cursor)
 			e.MoveCursorDown()
 			e.cursor[1] = 0
+		case tcell.KeyTab:
+			e.ReplaceText("\t", e.cursor, e.cursor)
+			e.MoveCursorRight()
 		case tcell.KeyBackspace, tcell.KeyBackspace2:
 			if e.cursor[0] == 0 && e.cursor[1] == 0 {
 				return
