@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -25,15 +26,17 @@ type (
 	Editor struct {
 		viewModalFunc func(string)
 		*tview.Box
-		text          string
-		pending       string
-		spansPerLines [][]span
-		undoStack     []undoStackItem
-		undoOffset    int
-		cursor        [2]int
-		offsets       [2]int
-		tabSize       int
-		mode          mode
+		text                  string
+		pending               string
+		spansPerLines         [][]span
+		undoStack             []undoStackItem
+		undoOffset            int
+		cursor                [2]int
+		offsets               [2]int
+		tabSize               int
+		mode                  mode
+		motionwIndexesPerLine [][]int
+		editCount             uint64
 	}
 )
 
@@ -395,12 +398,16 @@ func NewEditor() *Editor {
 }
 
 func (e *Editor) SetText(text string, cursor [2]int) *Editor {
+	e.editCount++
 	clear(e.spansPerLines)
 
 	lines := strings.Split(text, "\n")
 	e.spansPerLines = make([][]span, len(lines))
 	e.cursor = cursor
 	e.text = text
+
+	e.motionwIndexesPerLine = nil
+	go e.buildMotionwIndexes(e.editCount)
 
 	for i, line := range lines {
 		text = line
@@ -429,6 +436,47 @@ func (e *Editor) SetText(text string, cursor [2]int) *Editor {
 	// panic(errors.New(fmt.Sprintf("%+v\n", e.spansPerLines[0])))
 
 	return e
+}
+
+func (e *Editor) buildMotionwIndexes(editCount uint64) {
+	rgOne := regexp.MustCompile(`(?:^|[^a-zA-Z0-9_À-ÿ])([a-zA-Z0-9_À-ÿ])`)
+	rgTwo := regexp.MustCompile(`(?:^|[a-zA-Z0-9_À-ÿ\s])([^a-zA-Z0-9_À-ÿ\s])`)
+
+	indexesPerLine := make([][]int, len(e.spansPerLines))
+	for i, line := range strings.Split(e.text, "\n") {
+		if e.editCount > editCount {
+			return
+		}
+
+		matchesOne := rgOne.FindAllStringSubmatchIndex(line, -1)
+		matchesTwo := rgTwo.FindAllStringSubmatchIndex(line, -1)
+
+		var indexes []int
+		for _, m := range matchesOne {
+			if len(m) < 4 || m[2] >= m[3] {
+				continue
+			}
+
+			indexes = append(indexes, m[2])
+		}
+		for _, m := range matchesTwo {
+			if len(m) < 4 || m[2] >= m[3] {
+				continue
+			}
+
+			indexes = append(indexes, m[2])
+		}
+		sort.Slice(indexes, func(i, j int) bool {
+			return indexes[i] < indexes[j]
+		})
+		indexesPerLine[i] = indexes
+	}
+
+	if e.editCount > editCount {
+		return
+	}
+	e.motionwIndexesPerLine = indexesPerLine
+	// panic(fmt.Sprintf("%+v", indexesPerLine))
 }
 
 func (e *Editor) Draw(screen tcell.Screen) {
@@ -707,6 +755,24 @@ func (e *Editor) InputHandler() func(event *tcell.EventKey, setFocus func(p tvie
 						return
 					}
 
+					e.cursor[1] = idx[0]
+					return
+				case 'w':
+					cursorColumn := e.cursor[1]
+					for _, indexes := range e.motionwIndexesPerLine[e.cursor[0]:] {
+						for _, idx := range indexes {
+							if idx > cursorColumn {
+								if idx <= len(e.spansPerLines[e.cursor[0]])-1 {
+									e.cursor[1] = idx
+									return
+								}
+							}
+						}
+						if e.cursor[0] < len(e.spansPerLines)-1 {
+							e.cursor[0]++
+							cursorColumn = -1
+						}
+					}
 					return
 				case 'r':
 					e.mode = replace
