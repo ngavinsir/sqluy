@@ -6,6 +6,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
@@ -19,8 +20,9 @@ type (
 	}
 
 	span struct {
-		runes []rune
-		width int
+		runes      []rune
+		width      int // printable width
+		bytesWidth int
 	}
 
 	Editor struct {
@@ -406,9 +408,6 @@ func (e *Editor) SetText(text string, cursor [2]int) *Editor {
 	e.cursor = cursor
 	e.text = text
 
-	e.motionwIndexesPerLine = nil
-	go e.buildMotionwIndexes(e.editCount)
-
 	for i, line := range lines {
 		text = line
 		spans := make([]span, uniseg.GraphemeClusterCount(text)+1)
@@ -423,9 +422,11 @@ func (e *Editor) SetText(text string, cursor [2]int) *Editor {
 			if cluster == "\t" {
 				width = e.tabSize
 			}
+			_, bytesWidth := utf8.DecodeRuneInString(cluster)
 			span := span{
-				width: width,
-				runes: []rune(cluster),
+				width:      width,
+				runes:      []rune(cluster),
+				bytesWidth: bytesWidth,
 			}
 			spans[j] = span
 			j++
@@ -434,6 +435,9 @@ func (e *Editor) SetText(text string, cursor [2]int) *Editor {
 		e.spansPerLines[i] = spans
 	}
 	// panic(errors.New(fmt.Sprintf("%+v\n", e.spansPerLines[0])))
+
+	e.motionwIndexesPerLine = nil
+	go e.buildMotionwIndexes(e.editCount)
 
 	return e
 }
@@ -447,6 +451,23 @@ func (e *Editor) buildMotionwIndexes(editCount uint64) {
 		if e.editCount > editCount {
 			return
 		}
+		if len(line) == 0 {
+			indexesPerLine[i] = nil
+			continue
+		}
+
+		bytesWidthSum := 0
+		for _, s := range e.spansPerLines[i] {
+			bytesWidthSum += s.bytesWidth
+		}
+		mapper := make([]int, bytesWidthSum)
+		mapperIdx := 0
+		for i, s := range e.spansPerLines[i] {
+			for j := range s.bytesWidth {
+				mapper[mapperIdx+j] = i
+			}
+			mapperIdx += s.bytesWidth
+		}
 
 		matchesOne := rgOne.FindAllStringSubmatchIndex(line, -1)
 		matchesTwo := rgTwo.FindAllStringSubmatchIndex(line, -1)
@@ -457,14 +478,14 @@ func (e *Editor) buildMotionwIndexes(editCount uint64) {
 				continue
 			}
 
-			indexes = append(indexes, m[2])
+			indexes = append(indexes, mapper[m[2]])
 		}
 		for _, m := range matchesTwo {
 			if len(m) < 4 || m[2] >= m[3] {
 				continue
 			}
 
-			indexes = append(indexes, m[2])
+			indexes = append(indexes, mapper[m[2]])
 		}
 		sort.Slice(indexes, func(i, j int) bool {
 			return indexes[i] < indexes[j]
