@@ -23,7 +23,7 @@ func main() {
 
 	page := tview.NewPages()
 
-	e := NewEditor(true)
+	e := NewEditor(false)
 	e.viewModalFunc = func(text string) {
 		var wg sync.WaitGroup
 		modalChan <- ShowModalArg{Text: text, Wg: &wg, Refocus: e}

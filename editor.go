@@ -27,14 +27,16 @@ type (
 
 	Editor struct {
 		viewModalFunc func(string)
+		onDoneFunc    func(string)
 		*tview.Box
+		searchEditor                 *Editor
 		text                         string
 		pending                      string
-		motionwIndexesPerLineReverse [][]int
-		undoStack                    []undoStackItem
+		motioneIndexesPerLine        [][]int
 		motionwIndexesPerLine        [][]int
 		spansPerLines                [][]span
-		motioneIndexesPerLine        [][]int
+		undoStack                    []undoStackItem
+		motionwIndexesPerLineReverse [][]int
 		cursor                       [2]int
 		offsets                      [2]int
 		undoOffset                   int
@@ -51,6 +53,7 @@ const (
 	normal mode = iota
 	insert
 	replace
+	search
 )
 
 func (m mode) String() string {
@@ -59,6 +62,8 @@ func (m mode) String() string {
 		return "INSERT"
 	case replace:
 		return "REPLACE"
+	case search:
+		return "SEARCH"
 	default:
 		return "NORMAL"
 	}
@@ -70,6 +75,8 @@ func (m mode) ShortString() string {
 		return "i"
 	case replace:
 		return "r"
+	case search:
+		return "s"
 	default:
 		return "n"
 	}
@@ -598,6 +605,20 @@ func (e *Editor) Draw(screen tcell.Screen) {
 		tview.Print(screen, "("+e.mode.ShortString()+") ", x, y, 4, tview.AlignLeft, tcell.ColorYellow)
 		x += 4
 		w -= 4
+	} else if e.mode == search {
+		se := e.searchEditor
+		if se == nil {
+			se = NewEditor(true)
+			se.SetText("", [2]int{0, 0})
+			se.SetRect(x, y+h-1, w, 1)
+			se.mode = insert
+			se.onDoneFunc = func(s string) {
+				panic(s)
+			}
+			e.searchEditor = se
+		}
+
+		defer se.Draw(screen)
 	} else {
 		modeColor := tcell.ColorLightGray
 		// modeBg := tcell.ColorWhite
@@ -713,19 +734,34 @@ func (e *Editor) Draw(screen tcell.Screen) {
 		textX = x
 	}
 
-	cursorStyle := tcell.CursorStyleSteadyBlock
-	if e.mode == insert {
-		cursorStyle = tcell.CursorStyleSteadyBar
-	} else if e.mode == replace {
-		cursorStyle = tcell.CursorStyleSteadyUnderline
+	if e.mode != search {
+		cursorStyle := tcell.CursorStyleSteadyBlock
+		if e.mode == insert {
+			cursorStyle = tcell.CursorStyleSteadyBar
+		} else if e.mode == replace {
+			cursorStyle = tcell.CursorStyleSteadyUnderline
+		}
+		screen.SetCursorStyle(cursorStyle)
+		screen.ShowCursor(cursorX+x-e.offsets[1], e.cursor[0]+y-e.offsets[0])
 	}
-	screen.SetCursorStyle(cursorStyle)
-	screen.ShowCursor(cursorX+x-e.offsets[1], e.cursor[0]+y-e.offsets[0])
+}
+
+func (e *Editor) Focus(delegate func(p tview.Primitive)) {
+	if e.searchEditor != nil {
+		delegate(e.searchEditor)
+		return
+	}
+	e.Box.Focus(delegate)
 }
 
 func (e *Editor) InputHandler() func(event *tcell.EventKey, setFocus func(p tview.Primitive)) {
 	_, _, _, h := e.Box.GetInnerRect()
 	return e.Box.WrapInputHandler(func(event *tcell.EventKey, setFocus func(p tview.Primitive)) {
+		if e.searchEditor != nil {
+			e.searchEditor.InputHandler()(event, setFocus)
+			return
+		}
+
 		switch e.mode {
 		case normal:
 			switch key := event.Key(); key {
@@ -739,6 +775,10 @@ func (e *Editor) InputHandler() func(event *tcell.EventKey, setFocus func(p tvie
 				e.MoveCursorDown()
 			case tcell.KeyUp:
 				e.MoveCursorUp()
+			case tcell.KeyEnter:
+				if e.oneLineMode && e.onDoneFunc != nil {
+					e.onDoneFunc(e.text)
+				}
 			case tcell.KeyCtrlR:
 				if len(e.undoStack) < 1 {
 					return
@@ -772,6 +812,9 @@ func (e *Editor) InputHandler() func(event *tcell.EventKey, setFocus func(p tvie
 			case tcell.KeyRune:
 				r := event.Rune()
 				switch r {
+				case '/':
+					e.mode = search
+					return
 				case 'i':
 					e.mode = insert
 					return
@@ -991,7 +1034,8 @@ func (e *Editor) InputHandler() func(event *tcell.EventKey, setFocus func(p tvie
 				e.SaveChanges()
 				e.undoOffset--
 			case tcell.KeyEnter:
-				if e.oneLineMode {
+				if e.oneLineMode && e.onDoneFunc != nil {
+					e.onDoneFunc(e.text)
 					return
 				}
 				e.ReplaceText("\n", e.cursor, e.cursor)
