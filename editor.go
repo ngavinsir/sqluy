@@ -28,17 +28,19 @@ type (
 	Editor struct {
 		viewModalFunc func(string)
 		*tview.Box
-		text                  string
-		pending               string
-		spansPerLines         [][]span
-		undoStack             []undoStackItem
-		undoOffset            int
-		cursor                [2]int
-		offsets               [2]int
-		tabSize               int
-		mode                  mode
-		motionwIndexesPerLine [][]int
-		editCount             uint64
+		text                         string
+		pending                      string
+		spansPerLines                [][]span
+		undoStack                    []undoStackItem
+		undoOffset                   int
+		cursor                       [2]int
+		offsets                      [2]int
+		tabSize                      int
+		mode                         mode
+		motionwIndexesPerLine        [][]int
+		motionwIndexesPerLineReverse [][]int
+		motioneIndexesPerLine        [][]int
+		editCount                    uint64
 	}
 )
 
@@ -438,6 +440,8 @@ func (e *Editor) SetText(text string, cursor [2]int) *Editor {
 
 	e.motionwIndexesPerLine = nil
 	go e.buildMotionwIndexes(e.editCount)
+	e.motioneIndexesPerLine = nil
+	go e.buildMotioneIndexes(e.editCount)
 
 	return e
 }
@@ -445,6 +449,71 @@ func (e *Editor) SetText(text string, cursor [2]int) *Editor {
 func (e *Editor) buildMotionwIndexes(editCount uint64) {
 	rgOne := regexp.MustCompile(`(?:^|[^a-zA-Z0-9_À-ÿ])([a-zA-Z0-9_À-ÿ])`)
 	rgTwo := regexp.MustCompile(`(?:^|[a-zA-Z0-9_À-ÿ\s])([^a-zA-Z0-9_À-ÿ\s])`)
+
+	indexesPerLine := make([][]int, len(e.spansPerLines))
+	indexesPerLineReverse := make([][]int, len(e.spansPerLines))
+	for i, line := range strings.Split(e.text, "\n") {
+		if e.editCount > editCount {
+			return
+		}
+		if len(line) == 0 {
+			indexesPerLine[i] = nil
+			continue
+		}
+
+		bytesWidthSum := 0
+		for _, s := range e.spansPerLines[i] {
+			bytesWidthSum += s.bytesWidth
+		}
+		mapper := make([]int, bytesWidthSum)
+		mapperIdx := 0
+		for i, s := range e.spansPerLines[i] {
+			for j := range s.bytesWidth {
+				mapper[mapperIdx+j] = i
+			}
+			mapperIdx += s.bytesWidth
+		}
+
+		matchesOne := rgOne.FindAllStringSubmatchIndex(line, -1)
+		matchesTwo := rgTwo.FindAllStringSubmatchIndex(line, -1)
+
+		var indexes []int
+		for _, m := range matchesOne {
+			if len(m) < 4 || m[2] >= m[3] {
+				continue
+			}
+
+			indexes = append(indexes, mapper[m[2]])
+		}
+		for _, m := range matchesTwo {
+			if len(m) < 4 || m[2] >= m[3] {
+				continue
+			}
+
+			indexes = append(indexes, mapper[m[2]])
+		}
+		sort.Slice(indexes, func(i, j int) bool {
+			return indexes[i] < indexes[j]
+		})
+		indexesPerLine[i] = indexes
+		reverseIndexes := append([]int{}, indexes...)
+		sort.Slice(reverseIndexes, func(i, j int) bool {
+			return reverseIndexes[i] > reverseIndexes[j]
+		})
+		indexesPerLineReverse[len(indexesPerLineReverse)-1-i] = reverseIndexes
+	}
+
+	if e.editCount > editCount {
+		return
+	}
+	e.motionwIndexesPerLine = indexesPerLine
+	e.motionwIndexesPerLineReverse = indexesPerLineReverse
+	// panic(fmt.Sprintf("%+v", indexesPerLine))
+}
+
+func (e *Editor) buildMotioneIndexes(editCount uint64) {
+	rgOne := regexp.MustCompile(`([^{a-zA-Z0-9_À-ÿ}\s])[{a-zA-Z0-9_À-ÿ}\s]`)
+	rgTwo := regexp.MustCompile(`([{a-zA-Z0-9_À-ÿ}])(?:[^{a-zA-Z0-9_À-ÿ}]|$)`)
 
 	indexesPerLine := make([][]int, len(e.spansPerLines))
 	for i, line := range strings.Split(e.text, "\n") {
@@ -496,8 +565,7 @@ func (e *Editor) buildMotionwIndexes(editCount uint64) {
 	if e.editCount > editCount {
 		return
 	}
-	e.motionwIndexesPerLine = indexesPerLine
-	// panic(fmt.Sprintf("%+v", indexesPerLine))
+	e.motioneIndexesPerLine = indexesPerLine
 }
 
 func (e *Editor) Draw(screen tcell.Screen) {
@@ -781,6 +849,40 @@ func (e *Editor) InputHandler() func(event *tcell.EventKey, setFocus func(p tvie
 				case 'w':
 					cursorColumn := e.cursor[1]
 					for _, indexes := range e.motionwIndexesPerLine[e.cursor[0]:] {
+						for _, idx := range indexes {
+							if idx > cursorColumn {
+								if idx <= len(e.spansPerLines[e.cursor[0]])-1 {
+									e.cursor[1] = idx
+									return
+								}
+							}
+						}
+						if e.cursor[0] < len(e.spansPerLines)-1 {
+							e.cursor[0]++
+							cursorColumn = -1
+						}
+					}
+					return
+				case 'b':
+					cursorColumn := e.cursor[1]
+					for _, indexes := range e.motionwIndexesPerLineReverse[len(e.spansPerLines)-1-e.cursor[0]:] {
+						for _, idx := range indexes {
+							if idx < cursorColumn {
+								if idx >= 0 {
+									e.cursor[1] = idx
+									return
+								}
+							}
+						}
+						if e.cursor[0] > 0 {
+							e.cursor[0]--
+							cursorColumn = len(e.spansPerLines[e.cursor[0]])
+						}
+					}
+					return
+				case 'e':
+					cursorColumn := e.cursor[1]
+					for _, indexes := range e.motioneIndexesPerLine[e.cursor[0]:] {
 						for _, idx := range indexes {
 							if idx > cursorColumn {
 								if idx <= len(e.spansPerLines[e.cursor[0]])-1 {
