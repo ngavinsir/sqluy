@@ -818,6 +818,9 @@ func (e *Editor) InputHandler() func(event *tcell.EventKey, setFocus func(p tvie
 						}
 						e.ReplaceText("", from, until)
 						e.cursor[0]--
+						if e.cursor[0] < 0 {
+							e.cursor[0] = 0
+						}
 						e.SaveChanges()
 						e.undoOffset--
 						return
