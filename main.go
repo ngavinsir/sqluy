@@ -2,8 +2,11 @@ package main
 
 import (
 	"context"
+	_ "embed"
 	"sync"
 
+	"github.com/ngavinsir/sqluy/editor"
+	"github.com/ngavinsir/sqluy/keymap"
 	"github.com/rivo/tview"
 )
 
@@ -15,7 +18,11 @@ type (
 	}
 )
 
+//go:embed keymap.json
+var keymapString string
+
 func main() {
+	km := keymap.New(keymapString)
 	var wg sync.WaitGroup
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -23,11 +30,11 @@ func main() {
 
 	page := tview.NewPages()
 
-	e := NewEditor(false)
-	e.viewModalFunc = func(text string) {
+	e := editor.New(false)
+	e.SetViewModalFunc(func(text string) {
 		var wg sync.WaitGroup
 		modalChan <- ShowModalArg{Text: text, Wg: &wg, Refocus: e}
-	}
+	})
 	// flex := tview.NewFlex().
 	// 	AddItem(e, 0, 1, true)
 	modal := tview.NewModal().AddButtons([]string{"Ok"})

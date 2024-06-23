@@ -1,4 +1,4 @@
-package main
+package editor
 
 import (
 	"fmt"
@@ -13,8 +13,11 @@ import (
 	"github.com/rivo/uniseg"
 )
 
-// TODO: change indexes format to [2]int cursor pos
 type (
+	keymapper interface {
+		Get(keys []string, group string) (string, bool)
+	}
+
 	undoStackItem struct {
 		text   string
 		cursor [2]int
@@ -32,7 +35,7 @@ type (
 		*tview.Box
 		searchEditor                 *Editor
 		text                         string
-		pending                      string
+		pending                      []string
 		motionIndexes                map[string][][2]int
 		motionwIndexesPerLine        [][]int
 		searchIndexesPerLine         [][]int
@@ -46,6 +49,9 @@ type (
 		editCount                    uint64
 		mode                         mode
 		oneLineMode                  bool
+		isSearching                  bool
+		keymapper                    keymapper
+		actionRunner                 map[Action]func()
 	}
 )
 
@@ -55,8 +61,6 @@ const (
 	normal mode = iota
 	insert
 	replace
-	search
-	searchBrowser
 )
 
 func (m mode) String() string {
@@ -65,8 +69,6 @@ func (m mode) String() string {
 		return "INSERT"
 	case replace:
 		return "REPLACE"
-	case search, searchBrowser:
-		return "SEARCH"
 	default:
 		return "NORMAL"
 	}
@@ -78,22 +80,16 @@ func (m mode) ShortString() string {
 		return "i"
 	case replace:
 		return "r"
-	case search, searchBrowser:
-		return "s"
 	default:
 		return "n"
 	}
 }
 
-func NewEditor(oneLineMode bool) *Editor {
+func New(km keymapper) *Editor {
 	e := &Editor{
-		tabSize: 4,
-		Box:     tview.NewBox(),
-	}
-	if oneLineMode {
-		e.oneLineMode = true
-	} else {
-		e.Box.SetBorder(true).SetTitle("Editor")
+		tabSize:   4,
+		Box:       tview.NewBox(),
+		keymapper: km,
 	}
 	// e.SetText("amsok", [2]int{0, 0})
 	e.SetText(`
@@ -425,6 +421,20 @@ func NewEditor(oneLineMode bool) *Editor {
 		e.SetText(b.String(), e.cursor)
 	}
 	    `, [2]int{0, 0})
+
+	return e
+}
+
+func (e *Editor) SetOneLineMode(b bool) *Editor {
+	e.oneLineMode = b
+	if !b {
+		e.Box.SetBorder(true).SetTitle("Editor")
+	}
+	return e
+}
+
+func (e *Editor) SetViewModalFunc(f func(string)) *Editor {
+	e.viewModalFunc = f
 	return e
 }
 
@@ -648,10 +658,10 @@ func (e *Editor) Draw(screen tcell.Screen) {
 		tview.Print(screen, "("+e.mode.ShortString()+") ", x, y, 4, tview.AlignLeft, tcell.ColorYellow)
 		x += 4
 		w -= 4
-	} else if e.mode == search {
+	} else if e.isSearching {
 		se := e.searchEditor
 		if se == nil {
-			se = NewEditor(true)
+			se = New(e.keymapper).SetOneLineMode(true)
 			se.SetText("", [2]int{0, 0})
 			se.SetRect(x, y+h-1, w, 1)
 			se.mode = insert
@@ -681,8 +691,8 @@ func (e *Editor) Draw(screen tcell.Screen) {
 		}
 		_, modeWidth := tview.Print(screen, e.mode.String(), x, y+h-1, w, tview.AlignLeft, modeColor)
 		_, modeTxtWidth := tview.Print(screen, " mode", x+modeWidth, y+h-1, w-modeWidth, tview.AlignLeft, tcell.ColorWhite)
-		if e.pending != "" {
-			tview.Print(screen, "("+e.pending+")", x+modeWidth+modeTxtWidth+1, y+h-1, w-(x+modeWidth+modeTxtWidth), tview.AlignLeft, tcell.ColorYellow)
+		if len(e.pending) > 0 {
+			tview.Print(screen, "("+strings.Join(e.pending, "")+")", x+modeWidth+modeTxtWidth+1, y+h-1, w-(x+modeWidth+modeTxtWidth), tview.AlignLeft, tcell.ColorYellow)
 		}
 		h--
 	}
@@ -784,7 +794,7 @@ func (e *Editor) Draw(screen tcell.Screen) {
 		textX = x
 	}
 
-	if e.mode != search {
+	if !e.isSearching {
 		cursorStyle := tcell.CursorStyleSteadyBlock
 		if e.mode == insert {
 			cursorStyle = tcell.CursorStyleSteadyBar
@@ -805,18 +815,40 @@ func (e *Editor) Focus(delegate func(p tview.Primitive)) {
 }
 
 func (e *Editor) InputHandler() func(event *tcell.EventKey, setFocus func(p tview.Primitive)) {
-	_, _, _, h := e.Box.GetInnerRect()
 	return e.Box.WrapInputHandler(func(event *tcell.EventKey, setFocus func(p tview.Primitive)) {
 		if e.searchEditor != nil {
 			e.searchEditor.InputHandler()(event, setFocus)
 			return
 		}
 
+		eventName := event.Name()
+		if event.Key() == tcell.KeyRune {
+			eventName = string(event.Rune())
+		} else {
+			eventName = strings.ToLower(eventName)
+		}
+		e.pending = append(e.pending, eventName)
+		// panic(e.pending[0])
+		group := e.mode.ShortString()
+		if e.oneLineMode {
+			group = "o" + e.mode.ShortString()
+		}
+
+		action, anyStartWith := e.keymapper.Get(e.pending, group)
+		if action != "" && e.actionRunner[action] != nil {
+			e.actionRunner[action]()
+			e.pending = nil
+			return
+		}
+		if anyStartWith {
+			return
+		}
+		e.pending = nil
+		return
+
 		switch e.mode {
 		case normal:
 			switch key := event.Key(); key {
-			case tcell.KeyEsc:
-				e.pending = ""
 			case tcell.KeyLeft:
 				e.MoveCursorLeft()
 			case tcell.KeyRight:
@@ -830,237 +862,133 @@ func (e *Editor) InputHandler() func(event *tcell.EventKey, setFocus func(p tvie
 					e.onDoneFunc(e.text)
 				}
 			case tcell.KeyCtrlR:
-				if len(e.undoStack) < 1 {
-					return
-				}
-				if e.undoOffset+1 >= len(e.undoStack)-1 {
-					return
-				}
-				redo := e.undoStack[e.undoOffset+2]
-				e.undoOffset++
-				e.SetText(redo.text, redo.cursor)
+				e.Redo()
 			case tcell.KeyCtrlU:
-				distanceFromTop := e.cursor[0] - e.offsets[0]
 				e.MoveCursorHalfPageUp()
-				newRowOffset := e.cursor[0] - distanceFromTop
-				if newRowOffset > len(e.spansPerLines)-h {
-					newRowOffset = len(e.spansPerLines) - h
-				} else if newRowOffset < 0 {
-					newRowOffset = 0
-				}
-				e.offsets[0] = newRowOffset
 			case tcell.KeyCtrlD:
-				distanceFromTop := e.cursor[0] - e.offsets[0]
 				e.MoveCursorHalfPageDown()
-				newRowOffset := e.cursor[0] - distanceFromTop
-				if newRowOffset > len(e.spansPerLines)-h {
-					newRowOffset = len(e.spansPerLines) - h
-				} else if newRowOffset < 0 {
-					newRowOffset = 0
-				}
-				e.offsets[0] = newRowOffset
 			case tcell.KeyRune:
 				r := event.Rune()
 				switch r {
 				case '/':
-					e.mode = search
+					e.EnableSearch()
 					return
 				case 'i':
-					e.mode = insert
+					e.ChangeMode(insert)
 					return
 				case 'x':
-					from := e.cursor
-					until := [2]int{e.cursor[0], e.cursor[1] + 1}
-					e.ReplaceText("", from, until)
-					e.cursor = from
+					e.DeleteUnderCursor()
 					return
 				case 'u':
-					if len(e.undoStack) < 1 {
-						return
-					}
-					if e.undoOffset < 0 {
-						return
-					}
-					undo := e.undoStack[e.undoOffset]
-					e.undoOffset--
-					e.SetText(undo.text, undo.cursor)
+					e.Undo()
 					return
 				case 'o':
 					if e.oneLineMode {
 						return
 					}
-					e.MoveCursorEndOfLine()
-					e.cursor[1]++
-					e.ReplaceText("\n", e.cursor, e.cursor)
-					e.MoveCursorDown()
-					e.cursor[1] = 0
-					e.SaveChanges()
-					e.undoOffset--
-					e.mode = insert
+					e.InsertBelow()
 				case 'O':
 					if e.oneLineMode {
 						return
 					}
-					e.MoveCursorStartOfLine()
-					e.ReplaceText("\n", e.cursor, e.cursor)
-					e.cursor[1] = 0
-					e.SaveChanges()
-					e.undoOffset--
-					e.mode = insert
+					e.InsertAbove()
 				case 'C':
-					from := e.cursor
-					until := [2]int{e.cursor[0], len(e.spansPerLines[e.cursor[0]]) - 1}
-					e.ReplaceText("", from, until)
-					e.SaveChanges()
-					e.undoOffset--
-					e.mode = insert
+					e.ChangeUntilEndOfLine()
 					return
 				case 'D':
-					if len(e.spansPerLines[e.cursor[0]]) <= 1 {
-						return
-					}
-					from := e.cursor
-					until := [2]int{e.cursor[0], len(e.spansPerLines[e.cursor[0]]) - 1}
-					e.ReplaceText("", from, until)
-					e.cursor[1]--
-					if e.cursor[1] < 0 {
-						e.cursor[1] = 0
-					}
-					e.SaveChanges()
-					e.undoOffset--
+					e.DeleteUntilEndOfLine()
 					return
 				case 'd':
-					if e.pending == "d" {
-						e.pending = ""
-						if len(e.spansPerLines) <= 1 {
-							return
-						}
-						from := [2]int{e.cursor[0], 0}
-						until := [2]int{e.cursor[0] + 1, 0}
-						if e.cursor[0] == len(e.spansPerLines)-1 {
-							aboveRow := e.cursor[0] - 1
-							from = [2]int{aboveRow, len(e.spansPerLines[aboveRow]) - 1}
-							until = [2]int{e.cursor[0], len(e.spansPerLines[e.cursor[0]]) - 1}
-						}
-						e.ReplaceText("", from, until)
-						e.cursor[0]--
-						if e.cursor[0] < 0 {
-							e.cursor[0] = 0
-						}
-						e.SaveChanges()
-						e.undoOffset--
-						return
-					}
-				case 'a':
-					e.mode = insert
-					e.MoveCursorRight()
+					e.DeleteLine()
 					return
-				case 'A':
-					e.mode = insert
-					e.MoveCursorEndOfLine()
-					return
-				case '$':
-					e.MoveCursorEndOfLine()
-					return
-				case '0':
-					e.MoveCursorStartOfLine()
-					return
-				case '^':
-					rg := regexp.MustCompile(`\S`)
-					idx := rg.FindStringIndex(strings.Split(e.text, "\n")[e.cursor[0]])
-					if len(idx) == 0 {
-						e.cursor[1] = 0
-						return
-					}
-
-					e.cursor[1] = idx[0]
-					return
-				case 'n':
-					cursorColumn := e.cursor[1]
-					for i, indexes := range e.searchIndexesPerLine[e.cursor[0]:] {
-						for _, idx := range indexes {
-							if idx > cursorColumn {
-								if idx <= len(e.spansPerLines[i+e.cursor[0]])-1 {
-									e.cursor[1] = idx
-									e.cursor[0] = i + e.cursor[0]
-									return
-								}
+				}
+			case 'a':
+				e.InsertAfter()
+				return
+			case 'A':
+				e.InsertEndOfLine()
+				return
+			case '$':
+				e.MoveCursorEndOfLine()
+				return
+			case '0':
+				e.MoveCursorStartOfLine()
+				return
+			case '^':
+				e.MoveCursorFirstNonWhitespace()
+				return
+			case 'n':
+				cursorColumn := e.cursor[1]
+				for i, indexes := range e.searchIndexesPerLine[e.cursor[0]:] {
+					for _, idx := range indexes {
+						if idx > cursorColumn {
+							if idx <= len(e.spansPerLines[i+e.cursor[0]])-1 {
+								e.cursor[1] = idx
+								e.cursor[0] = i + e.cursor[0]
+								return
 							}
 						}
+					}
+					cursorColumn = -1
+				}
+				for i, indexes := range e.searchIndexesPerLine[:e.cursor[0]] {
+					for _, idx := range indexes {
+						if idx > cursorColumn {
+							if idx <= len(e.spansPerLines[e.cursor[0]])-1 {
+								e.cursor[1] = idx
+								e.cursor[0] = i
+								return
+							}
+						}
+					}
+					cursorColumn = -1
+				}
+				return
+			case 'w':
+				cursorColumn := e.cursor[1]
+				for _, indexes := range e.motionwIndexesPerLine[e.cursor[0]:] {
+					for _, idx := range indexes {
+						if idx > cursorColumn {
+							if idx <= len(e.spansPerLines[e.cursor[0]])-1 {
+								e.cursor[1] = idx
+								return
+							}
+						}
+					}
+					if e.cursor[0] < len(e.spansPerLines)-1 {
+						e.cursor[0]++
 						cursorColumn = -1
-					}
-					for i, indexes := range e.searchIndexesPerLine[:e.cursor[0]] {
-						for _, idx := range indexes {
-							if idx > cursorColumn {
-								if idx <= len(e.spansPerLines[e.cursor[0]])-1 {
-									e.cursor[1] = idx
-									e.cursor[0] = i
-									return
-								}
-							}
-						}
-						cursorColumn = -1
-					}
-					return
-				case 'w':
-					cursorColumn := e.cursor[1]
-					for _, indexes := range e.motionwIndexesPerLine[e.cursor[0]:] {
-						for _, idx := range indexes {
-							if idx > cursorColumn {
-								if idx <= len(e.spansPerLines[e.cursor[0]])-1 {
-									e.cursor[1] = idx
-									return
-								}
-							}
-						}
-						if e.cursor[0] < len(e.spansPerLines)-1 {
-							e.cursor[0]++
-							cursorColumn = -1
-						}
-					}
-					return
-				case 'b':
-					cursorColumn := e.cursor[1]
-					for _, indexes := range e.motionwIndexesPerLineReverse[len(e.spansPerLines)-1-e.cursor[0]:] {
-						for _, idx := range indexes {
-							if idx < cursorColumn {
-								if idx >= 0 {
-									e.cursor[1] = idx
-									return
-								}
-							}
-						}
-						if e.cursor[0] > 0 {
-							e.cursor[0]--
-							cursorColumn = len(e.spansPerLines[e.cursor[0]])
-						}
-					}
-					return
-				case 'e':
-					n := 1
-					reNumber := regexp.MustCompile(`^\d+$`)
-					if reNumber.MatchString(e.pending) {
-						num, err := strconv.Atoi(e.pending)
-						if err == nil && num > 0 {
-							n = num
-						}
-					}
-					e.cursor = e.GetMotion("e", n)
-					return
-				case 'r':
-					e.mode = replace
-					return
-				case 'G':
-					e.MoveCursorLastLine()
-					return
-				case 'g':
-					if e.pending == "g" {
-						e.MoveCursorFirstLine()
-						e.pending = ""
-						return
 					}
 				}
-				e.pending += string(r)
+				return
+			case 'b':
+				cursorColumn := e.cursor[1]
+				for _, indexes := range e.motionwIndexesPerLineReverse[len(e.spansPerLines)-1-e.cursor[0]:] {
+					for _, idx := range indexes {
+						if idx < cursorColumn {
+							if idx >= 0 {
+								e.cursor[1] = idx
+								return
+							}
+						}
+					}
+					if e.cursor[0] > 0 {
+						e.cursor[0]--
+						cursorColumn = len(e.spansPerLines[e.cursor[0]])
+					}
+				}
+				return
+			case 'e':
+				return
+			case 'r':
+				e.mode = replace
+				return
+			case 'G':
+				e.MoveCursorLastLine()
+				return
+			case 'g':
+				e.MoveCursorFirstLine()
+				return
 			}
 
 		case replace:
@@ -1288,8 +1216,17 @@ func (e *Editor) MoveCursorHalfPageDown() {
 		halfPageDownRowWidth += span.width
 	}
 
+	distanceFromTop := e.cursor[0] - e.offsets[0]
 	e.cursor[0] = halfPageDownIdx
 	e.cursor[1] = halfPageDownRowX
+
+	newRowOffset := e.cursor[0] - distanceFromTop
+	if newRowOffset > len(e.spansPerLines)-h {
+		newRowOffset = len(e.spansPerLines) - h
+	} else if newRowOffset < 0 {
+		newRowOffset = 0
+	}
+	e.offsets[0] = newRowOffset
 }
 
 func (e *Editor) MoveCursorLastLine() {
@@ -1394,8 +1331,17 @@ func (e *Editor) MoveCursorHalfPageUp() {
 		halfPageUpRowWidth += span.width
 	}
 
+	distanceFromTop := e.cursor[0] - e.offsets[0]
 	e.cursor[0] = halfPageUpIdx
 	e.cursor[1] = halfPageUpRowX
+
+	newRowOffset := e.cursor[0] - distanceFromTop
+	if newRowOffset > len(e.spansPerLines)-h {
+		newRowOffset = len(e.spansPerLines) - h
+	} else if newRowOffset < 0 {
+		newRowOffset = 0
+	}
+	e.offsets[0] = newRowOffset
 }
 
 func (e *Editor) MoveCursorFirstLine() {
@@ -1480,4 +1426,136 @@ func (e *Editor) SaveChanges() {
 		cursor: [2]int{e.cursor[0], e.cursor[1]},
 	})
 	e.undoOffset = maxUndoOffset
+}
+
+func (e *Editor) Done() {
+	e.onDoneFunc(e.text)
+}
+
+func (e *Editor) Redo() {
+	if len(e.undoStack) < 1 {
+		return
+	}
+	if e.undoOffset+1 >= len(e.undoStack)-1 {
+		return
+	}
+	redo := e.undoStack[e.undoOffset+2]
+	e.undoOffset++
+	e.SetText(redo.text, redo.cursor)
+}
+
+func (e *Editor) EnableSearch() {
+	e.isSearching = true
+}
+
+func (e *Editor) ChangeMode(m mode) {
+	e.mode = m
+}
+
+func (e *Editor) DeleteUnderCursor() {
+	from := e.cursor
+	until := [2]int{e.cursor[0], e.cursor[1] + 1}
+	e.ReplaceText("", from, until)
+	e.cursor = from
+}
+
+func (e *Editor) Undo() {
+	if len(e.undoStack) < 1 {
+		return
+	}
+	if e.undoOffset < 0 {
+		return
+	}
+	undo := e.undoStack[e.undoOffset]
+	e.undoOffset--
+	e.SetText(undo.text, undo.cursor)
+}
+
+func (e *Editor) InsertBelow() {
+	e.MoveCursorEndOfLine()
+	e.cursor[1]++
+	e.ReplaceText("\n", e.cursor, e.cursor)
+	e.MoveCursorDown()
+	e.cursor[1] = 0
+	e.SaveChanges()
+	e.undoOffset--
+	e.mode = insert
+}
+
+func (e *Editor) InsertAbove() {
+	e.MoveCursorStartOfLine()
+	e.ReplaceText("\n", e.cursor, e.cursor)
+	e.cursor[1] = 0
+	e.SaveChanges()
+	e.undoOffset--
+	e.mode = insert
+}
+
+func (e *Editor) ChangeUntilEndOfLine() {
+	from := e.cursor
+	until := [2]int{e.cursor[0], len(e.spansPerLines[e.cursor[0]]) - 1}
+	e.ReplaceText("", from, until)
+	e.SaveChanges()
+	e.undoOffset--
+	e.mode = insert
+}
+
+func (e *Editor) DeleteUntilEndOfLine() {
+	if len(e.spansPerLines[e.cursor[0]]) <= 1 {
+		return
+	}
+	from := e.cursor
+	until := [2]int{e.cursor[0], len(e.spansPerLines[e.cursor[0]]) - 1}
+	e.ReplaceText("", from, until)
+	e.cursor[1]--
+	if e.cursor[1] < 0 {
+		e.cursor[1] = 0
+	}
+	e.SaveChanges()
+	e.undoOffset--
+}
+
+func (e *Editor) DeleteLine() {
+	if len(e.spansPerLines) <= 1 {
+		return
+	}
+	from := [2]int{e.cursor[0], 0}
+	until := [2]int{e.cursor[0] + 1, 0}
+	if e.cursor[0] == len(e.spansPerLines)-1 {
+		aboveRow := e.cursor[0] - 1
+		from = [2]int{aboveRow, len(e.spansPerLines[aboveRow]) - 1}
+		until = [2]int{e.cursor[0], len(e.spansPerLines[e.cursor[0]]) - 1}
+	}
+	e.ReplaceText("", from, until)
+	e.cursor[0]--
+	if e.cursor[0] < 0 {
+		e.cursor[0] = 0
+	}
+	e.SaveChanges()
+	e.undoOffset--
+}
+
+func (e *Editor) InsertAfter() {
+	e.mode = insert
+	e.MoveCursorRight()
+}
+
+func (e *Editor) InsertEndOfLine() {
+	e.mode = insert
+	e.MoveCursorEndOfLine()
+}
+
+func (e *Editor) MoveCursorFirstNonWhitespace() {
+	rg := regexp.MustCompile(`\S`)
+	idx := rg.FindStringIndex(strings.Split(e.text, "\n")[e.cursor[0]])
+	if len(idx) == 0 {
+		e.cursor[1] = 0
+		return
+	}
+
+	e.cursor[1] = idx[0]
+}
+
+func (e *Editor) MoveMotion(motion string, n int) {
+	e.cursor = e.GetMotion(motion, n)
 }

@@ -1,0 +1,58 @@
+{
+  "keymaps": [
+    {
+      "keys": [
+        "left"
+      ],
+      "groups": [
+        "n",
+        "i",
+        "r"
+      ],
+      "action": "editor.move_left"
+    },
+    {
+      "keys": [
+        "right"
+      ],
+      "groups": [
+        "n",
+        "i",
+        "r"
+      ],
+      "action": "editor.move_right"
+    },
+    {
+      "keys": [
+        "up"
+      ],
+      "groups": [
+        "n",
+        "i",
+        "r"
+      ],
+      "action": "editor.move_up"
+    },
+    {
+      "keys": [
+        "down"
+      ],
+      "groups": [
+        "n",
+        "i",
+        "r"
+      ],
+      "action": "editor.move_down"
+    },
+    {
+      "keys": [
+        "d",
+        "d"
+      ],
+      "groups": [
+        "n"
+      ],
+      "action": "editor.delete_line"
+    }
+  ]
+}

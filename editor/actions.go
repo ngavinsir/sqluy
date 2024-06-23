@@ -1,0 +1,72 @@
+package editor
+
+type Action uint64
+
+const (
+	ActionNone Action = iota
+	ActionMoveLeft
+	ActionMoveRight
+	ActionMoveUp
+	ActionMoveDown
+	ActionDone
+	ActionEnableSearch
+	ActionInsert
+	ActionRedo
+	ActionUndo
+	ActionMoveHalfPageUp
+	ActionMoveHalfPageDown
+	ActionDeleteUnderCursor
+	ActionInsertAfter
+	ActionInsertEndOfLine
+	ActionMoveEndOfLine
+	ActionMoveStartOfLine
+	ActionMoveFirstNonWhitespace
+	ActionInsertBelow
+	ActionInsertAbove
+	ActionChangeUntilEndOfLine
+	ActionDeleteUntilEndOfLine
+	ActionDeleteLine
+	ActionReplace
+	ActionMoveLastLine
+	ActionMoveFirstLine
+)
+
+var actionMapper = map[Action]string{
+	ActionMoveLeft:               "move_left",
+	ActionMoveRight:              "move_right",
+	ActionMoveUp:                 "move_up",
+	ActionMoveDown:               "move_down",
+	ActionDone:                   "done",
+	ActionEnableSearch:           "enable_search",
+	ActionInsert:                 "insert",
+	ActionRedo:                   "redo",
+	ActionUndo:                   "undo",
+	ActionMoveHalfPageUp:         "move_half_page_up",
+	ActionMoveHalfPageDown:       "move_half_page_down",
+	ActionDeleteUnderCursor:      "delete_under_cursor",
+	ActionInsertAfter:            "insert_after",
+	ActionInsertEndOfLine:        "insert_end_of_line",
+	ActionMoveEndOfLine:          "move_end_of_line",
+	ActionMoveStartOfLine:        "move_start_of_line",
+	ActionMoveFirstNonWhitespace: "move_first_non_whitespace",
+	ActionInsertBelow:            "insert_below",
+	ActionInsertAbove:            "insert_above",
+	ActionChangeUntilEndOfLine:   "change_until_end_of_line",
+	ActionDeleteUntilEndOfLine:   "delete_until_end_of_line",
+	ActionDeleteLine:             "delete_line",
+	ActionReplace:                "replace",
+	ActionMoveLastLine:           "move_last_line",
+	ActionMoveFirstLine:          "move_first_line",
+}
+var reverseActionMapper map[Action]string
+
+func (a Action) String() string {
+	if actionMapper[a] != "" {
+		return "editor." + actionMapper[a]
+	}
+	return "editor.none"
+}
+
+func FromString(s string) Action {
+
+}
