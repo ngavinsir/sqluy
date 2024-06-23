@@ -33,7 +33,7 @@ type (
 		searchEditor                 *Editor
 		text                         string
 		pending                      string
-		motioneIndexesPerLine        [][]int
+		motionIndexes                map[string][][2]int
 		motionwIndexesPerLine        [][]int
 		searchIndexesPerLine         [][]int
 		spansPerLines                [][]span
@@ -468,9 +468,9 @@ func (e *Editor) SetText(text string, cursor [2]int) *Editor {
 	}
 	// panic(errors.New(fmt.Sprintf("%+v\n", e.spansPerLines[0])))
 
+	e.motionIndexes = make(map[string][][2]int)
 	e.motionwIndexesPerLine = nil
 	go e.buildMotionwIndexes(e.editCount)
-	e.motioneIndexesPerLine = nil
 	go e.buildMotioneIndexes(e.editCount)
 
 	return e
@@ -587,13 +587,12 @@ func (e *Editor) buildMotioneIndexes(editCount uint64) {
 	rgOne := regexp.MustCompile(`([^{a-zA-Z0-9_À-ÿ}\s])[{a-zA-Z0-9_À-ÿ}\s]`)
 	rgTwo := regexp.MustCompile(`([{a-zA-Z0-9_À-ÿ}])(?:[^{a-zA-Z0-9_À-ÿ}]|$)`)
 
-	indexesPerLine := make([][]int, len(e.spansPerLines))
+	var indexes [][2]int
 	for i, line := range strings.Split(e.text, "\n") {
 		if e.editCount > editCount {
 			return
 		}
 		if len(line) == 0 {
-			indexesPerLine[i] = nil
 			continue
 		}
 
@@ -613,31 +612,30 @@ func (e *Editor) buildMotioneIndexes(editCount uint64) {
 		matchesOne := rgOne.FindAllStringSubmatchIndex(line, -1)
 		matchesTwo := rgTwo.FindAllStringSubmatchIndex(line, -1)
 
-		var indexes []int
 		for _, m := range matchesOne {
 			if len(m) < 4 || m[2] >= m[3] {
 				continue
 			}
 
-			indexes = append(indexes, mapper[m[2]])
+			indexes = append(indexes, [2]int{i, mapper[m[2]]})
 		}
 		for _, m := range matchesTwo {
 			if len(m) < 4 || m[2] >= m[3] {
 				continue
 			}
 
-			indexes = append(indexes, mapper[m[2]])
+			indexes = append(indexes, [2]int{i, mapper[m[2]]})
 		}
-		sort.Slice(indexes, func(i, j int) bool {
-			return indexes[i] < indexes[j]
-		})
-		indexesPerLine[i] = indexes
 	}
+	sort.Slice(indexes, func(i, j int) bool {
+		return indexes[i][0] < indexes[j][0] || (indexes[i][0] == indexes[j][0] && indexes[i][1] < indexes[j][1])
+	})
 
 	if e.editCount > editCount {
 		return
 	}
-	e.motioneIndexesPerLine = indexesPerLine
+	e.motionIndexes["e"] = indexes
+	// panic(fmt.Sprintf("%+v", indexes[:40]))
 }
 
 func (e *Editor) Draw(screen tcell.Screen) {
@@ -1039,21 +1037,15 @@ func (e *Editor) InputHandler() func(event *tcell.EventKey, setFocus func(p tvie
 					}
 					return
 				case 'e':
-					cursorColumn := e.cursor[1]
-					for _, indexes := range e.motioneIndexesPerLine[e.cursor[0]:] {
-						for _, idx := range indexes {
-							if idx > cursorColumn {
-								if idx <= len(e.spansPerLines[e.cursor[0]])-1 {
-									e.cursor[1] = idx
-									return
-								}
-							}
-						}
-						if e.cursor[0] < len(e.spansPerLines)-1 {
-							e.cursor[0]++
-							cursorColumn = -1
+					n := 1
+					reNumber := regexp.MustCompile(`^\d+$`)
+					if reNumber.MatchString(e.pending) {
+						num, err := strconv.Atoi(e.pending)
+						if err == nil && num > 0 {
+							n = num
 						}
 					}
+					e.cursor = e.GetMotion("e", n)
 					return
 				case 'r':
 					e.mode = replace
@@ -1147,6 +1139,37 @@ func (e *Editor) InputHandler() func(event *tcell.EventKey, setFocus func(p tvie
 			}
 		}
 	})
+}
+
+// n must be more than or equal to 1
+func (e *Editor) GetMotion(m string, n int) [2]int {
+	if e.motionIndexes[m] == nil {
+		return e.cursor
+	}
+	if len(e.motionIndexes[m]) == 1 {
+		return e.motionIndexes[m][0]
+	}
+	if n < 1 {
+		n = 1
+	}
+	n--
+
+	row := e.cursor[0]
+	col := e.cursor[1]
+	for i, index := range e.motionIndexes[m] {
+		if index[0] < row {
+			continue
+		}
+
+		if index[0] > row {
+			col = -1
+		}
+
+		if index[1] > col {
+			return e.motionIndexes[m][(i+n)%len(e.motionIndexes[m])]
+		}
+	}
+	return e.motionIndexes[m][(0+n)%len(e.motionIndexes[m])]
 }
 
 func (e *Editor) MoveCursorRight() {
