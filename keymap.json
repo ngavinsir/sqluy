@@ -137,6 +137,24 @@
     },
     {
       "keys": [
+        "n"
+      ],
+      "groups": [
+        "n"
+      ],
+      "action": "editor.move_next_search"
+    },
+    {
+      "keys": [
+        "N"
+      ],
+      "groups": [
+        "n"
+      ],
+      "action": "editor.move_prev_search"
+    },
+    {
+      "keys": [
         "e"
       ],
       "groups": [

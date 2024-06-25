@@ -461,6 +461,12 @@ func New(km keymapper) *Editor {
 		ActionMoveBackEndOfWord: func() {
 			e.MoveMotion("e", -1)
 		},
+		ActionMoveNextSearch: func() {
+			e.MoveMotion("n", 1)
+		},
+		ActionMovePrevSearch: func() {
+			e.MoveMotion("n", -1)
+		},
 	}
 
 	return e
@@ -531,7 +537,6 @@ func (e *Editor) buildSearchIndexes(query string) bool {
 	rg := regexp.MustCompile(query)
 
 	var indexes [][2]int
-	var indexesReverse [][2]int
 	for i, line := range strings.Split(e.text, "\n") {
 		if len(line) == 0 {
 			continue
@@ -561,13 +566,8 @@ func (e *Editor) buildSearchIndexes(query string) bool {
 			indexes = append(indexes, [2]int{i, mapper[m[0]]})
 		}
 	}
-	indexesReverse = append(indexesReverse, indexes...)
-	sort.Slice(indexesReverse, func(i, j int) bool {
-		return indexesReverse[i][0] < indexesReverse[j][0] || (indexesReverse[i][0] == indexesReverse[j][0] && indexesReverse[i][1] < indexesReverse[j][1])
-	})
 
 	e.motionIndexes["n"] = indexes
-	e.motionIndexes["N"] = indexesReverse
 	return foundMatches
 }
 
@@ -703,6 +703,7 @@ func (e *Editor) Draw(screen tcell.Screen) {
 			se.SetRect(x, y+h-1, w, 1)
 			se.mode = insert
 			se.onDoneFunc = func(s string) {
+				e.isSearching = false
 				e.searchEditor = nil
 
 				foundMatches := e.buildSearchIndexes(s)
@@ -710,6 +711,7 @@ func (e *Editor) Draw(screen tcell.Screen) {
 					e.mode = normal
 				} else {
 					e.mode = normal
+					e.MoveMotion("n", 1)
 				}
 			}
 			e.searchEditor = se
