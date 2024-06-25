@@ -865,7 +865,7 @@ func (e *Editor) InputHandler() func(event *tcell.EventKey, setFocus func(p tvie
 			eventName = strings.ToLower(eventName)
 		}
 		e.pending = append(e.pending, eventName)
-		// panic(e.pending[0])
+
 		group := e.mode.ShortString()
 		if e.oneLineMode {
 			group = "o" + e.mode.ShortString()
@@ -881,75 +881,9 @@ func (e *Editor) InputHandler() func(event *tcell.EventKey, setFocus func(p tvie
 			return
 		}
 		e.pending = nil
-		// return
 
+		// default actions
 		switch e.mode {
-		case normal:
-		// switch key := event.Key(); key {
-		// case 'n':
-		// 	cursorColumn := e.cursor[1]
-		// 	for i, indexes := range e.searchIndexesPerLine[e.cursor[0]:] {
-		// 		for _, idx := range indexes {
-		// 			if idx > cursorColumn {
-		// 				if idx <= len(e.spansPerLines[i+e.cursor[0]])-1 {
-		// 					e.cursor[1] = idx
-		// 					e.cursor[0] = i + e.cursor[0]
-		// 					return
-		// 				}
-		// 			}
-		// 		}
-		// 		cursorColumn = -1
-		// 	}
-		// 	for i, indexes := range e.searchIndexesPerLine[:e.cursor[0]] {
-		// 		for _, idx := range indexes {
-		// 			if idx > cursorColumn {
-		// 				if idx <= len(e.spansPerLines[e.cursor[0]])-1 {
-		// 					e.cursor[1] = idx
-		// 					e.cursor[0] = i
-		// 					return
-		// 				}
-		// 			}
-		// 		}
-		// 		cursorColumn = -1
-		// 	}
-		// 	return
-		// case 'w':
-		// 	cursorColumn := e.cursor[1]
-		// 	for _, indexes := range e.motionwIndexesPerLine[e.cursor[0]:] {
-		// 		for _, idx := range indexes {
-		// 			if idx > cursorColumn {
-		// 				if idx <= len(e.spansPerLines[e.cursor[0]])-1 {
-		// 					e.cursor[1] = idx
-		// 					return
-		// 				}
-		// 			}
-		// 		}
-		// 		if e.cursor[0] < len(e.spansPerLines)-1 {
-		// 			e.cursor[0]++
-		// 			cursorColumn = -1
-		// 		}
-		// 	}
-		// 	return
-		// case 'b':
-		// 	cursorColumn := e.cursor[1]
-		// 	for _, indexes := range e.motionwIndexesPerLineReverse[len(e.spansPerLines)-1-e.cursor[0]:] {
-		// 		for _, idx := range indexes {
-		// 			if idx < cursorColumn {
-		// 				if idx >= 0 {
-		// 					e.cursor[1] = idx
-		// 					return
-		// 				}
-		// 			}
-		// 		}
-		// 		if e.cursor[0] > 0 {
-		// 			e.cursor[0]--
-		// 			cursorColumn = len(e.spansPerLines[e.cursor[0]])
-		// 		}
-		// 	}
-		// 	return
-		// case 'e':
-		// 	return
-
 		case replace:
 			switch key := event.Key(); key {
 			case tcell.KeyEsc:
