@@ -31,6 +31,9 @@ const (
 	ActionReplace
 	ActionMoveLastLine
 	ActionMoveFirstLine
+	ActionMoveEndOfWord
+	ActionMoveStartOfWord
+	ActionMoveBackStartOfWord
 )
 
 var actionMapper = map[Action]string{
@@ -59,6 +62,9 @@ var actionMapper = map[Action]string{
 	ActionReplace:                "replace",
 	ActionMoveLastLine:           "move_last_line",
 	ActionMoveFirstLine:          "move_first_line",
+	ActionMoveEndOfWord:          "move_end_of_word",
+	ActionMoveStartOfWord:        "move_start_of_word",
+	ActionMoveBackStartOfWord:    "move_back_start_of_word",
 }
 var reverseActionMapper map[string]Action
 var reverseActionMapperOnce sync.Once

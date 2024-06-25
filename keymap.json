@@ -137,6 +137,36 @@
     },
     {
       "keys": [
+        "e"
+      ],
+      "groups": [
+        "n",
+        "on"
+      ],
+      "action": "editor.move_end_of_word"
+    },
+    {
+      "keys": [
+        "w"
+      ],
+      "groups": [
+        "n",
+        "on"
+      ],
+      "action": "editor.move_start_of_word"
+    },
+    {
+      "keys": [
+        "b"
+      ],
+      "groups": [
+        "n",
+        "on"
+      ],
+      "action": "editor.move_back_start_of_word"
+    },
+    {
+      "keys": [
         "x"
       ],
       "groups": [

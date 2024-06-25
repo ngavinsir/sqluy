@@ -34,24 +34,21 @@ type (
 		viewModalFunc func(string)
 		onDoneFunc    func(string)
 		*tview.Box
-		searchEditor                 *Editor
-		actionRunner                 map[Action]func()
-		motionIndexes                map[string][][2]int
-		text                         string
-		undoStack                    []undoStackItem
-		motionwIndexesPerLine        [][]int
-		searchIndexesPerLine         [][]int
-		motionwIndexesPerLineReverse [][]int
-		pending                      []string
-		spansPerLines                [][]span
-		cursor                       [2]int
-		offsets                      [2]int
-		tabSize                      int
-		editCount                    uint64
-		undoOffset                   int
-		mode                         mode
-		oneLineMode                  bool
-		isSearching                  bool
+		searchEditor  *Editor
+		actionRunner  map[Action]func()
+		motionIndexes map[string][][2]int
+		text          string
+		undoStack     []undoStackItem
+		pending       []string
+		spansPerLines [][]span
+		cursor        [2]int
+		offsets       [2]int
+		tabSize       int
+		editCount     uint64
+		undoOffset    int
+		mode          mode
+		oneLineMode   bool
+		isSearching   bool
 	}
 )
 
@@ -452,6 +449,15 @@ func New(km keymapper) *Editor {
 		},
 		ActionMoveLastLine:  e.MoveCursorLastLine,
 		ActionMoveFirstLine: e.MoveCursorFirstLine,
+		ActionMoveEndOfWord: func() {
+			e.MoveMotion("e", 1)
+		},
+		ActionMoveStartOfWord: func() {
+			e.MoveMotion("w", 1)
+		},
+		ActionMoveBackStartOfWord: func() {
+			e.MoveMotion("w", -1)
+		},
 	}
 
 	return e
@@ -511,7 +517,6 @@ func (e *Editor) SetText(text string, cursor [2]int) *Editor {
 	// panic(errors.New(fmt.Sprintf("%+v\n", e.spansPerLines[0])))
 
 	e.motionIndexes = make(map[string][][2]int)
-	e.motionwIndexesPerLine = nil
 	go e.buildMotionwIndexes(e.editCount)
 	go e.buildMotioneIndexes(e.editCount)
 
@@ -522,10 +527,10 @@ func (e *Editor) buildSearchIndexes(query string) bool {
 	foundMatches := false
 	rg := regexp.MustCompile(query)
 
-	indexesPerLine := make([][]int, len(e.spansPerLines))
+	var indexes [][2]int
+	var indexesReverse [][2]int
 	for i, line := range strings.Split(e.text, "\n") {
 		if len(line) == 0 {
-			indexesPerLine[i] = nil
 			continue
 		}
 
@@ -544,34 +549,40 @@ func (e *Editor) buildSearchIndexes(query string) bool {
 
 		matches := rg.FindAllStringSubmatchIndex(line, -1)
 
-		var indexes []int
 		for _, m := range matches {
 			if len(m) == 0 {
 				continue
 			}
 
 			foundMatches = true
-			indexes = append(indexes, mapper[m[0]])
+			indexes = append(indexes, [2]int{i, mapper[m[0]]})
 		}
-		indexesPerLine[i] = indexes
 	}
+	indexesReverse = append(indexesReverse, indexes...)
+	sort.Slice(indexesReverse, func(i, j int) bool {
+		return indexesReverse[i][0] < indexesReverse[j][0] || (indexesReverse[i][0] == indexesReverse[j][0] && indexesReverse[i][1] < indexesReverse[j][1])
+	})
 
-	e.searchIndexesPerLine = indexesPerLine
+	e.motionIndexes["n"] = indexes
+	e.motionIndexes["N"] = indexesReverse
 	return foundMatches
 }
 
 func (e *Editor) buildMotionwIndexes(editCount uint64) {
+	defer func() {
+		if r := recover(); r != nil {
+			panic(r)
+		}
+	}()
 	rgOne := regexp.MustCompile(`(?:^|[^a-zA-Z0-9_À-ÿ])([a-zA-Z0-9_À-ÿ])`)
 	rgTwo := regexp.MustCompile(`(?:^|[a-zA-Z0-9_À-ÿ\s])([^a-zA-Z0-9_À-ÿ\s])`)
 
-	indexesPerLine := make([][]int, len(e.spansPerLines))
-	indexesPerLineReverse := make([][]int, len(e.spansPerLines))
+	var indexes [][2]int
 	for i, line := range strings.Split(e.text, "\n") {
 		if e.editCount > editCount {
 			return
 		}
 		if len(line) == 0 {
-			indexesPerLine[i] = nil
 			continue
 		}
 
@@ -591,38 +602,29 @@ func (e *Editor) buildMotionwIndexes(editCount uint64) {
 		matchesOne := rgOne.FindAllStringSubmatchIndex(line, -1)
 		matchesTwo := rgTwo.FindAllStringSubmatchIndex(line, -1)
 
-		var indexes []int
 		for _, m := range matchesOne {
 			if len(m) < 4 || m[2] >= m[3] {
 				continue
 			}
 
-			indexes = append(indexes, mapper[m[2]])
+			indexes = append(indexes, [2]int{i, mapper[m[2]]})
 		}
 		for _, m := range matchesTwo {
 			if len(m) < 4 || m[2] >= m[3] {
 				continue
 			}
 
-			indexes = append(indexes, mapper[m[2]])
+			indexes = append(indexes, [2]int{i, mapper[m[2]]})
 		}
-		sort.Slice(indexes, func(i, j int) bool {
-			return indexes[i] < indexes[j]
-		})
-		indexesPerLine[i] = indexes
-		reverseIndexes := append([]int{}, indexes...)
-		sort.Slice(reverseIndexes, func(i, j int) bool {
-			return reverseIndexes[i] > reverseIndexes[j]
-		})
-		indexesPerLineReverse[len(indexesPerLineReverse)-1-i] = reverseIndexes
 	}
+	sort.Slice(indexes, func(i, j int) bool {
+		return indexes[i][0] < indexes[j][0] || (indexes[i][0] == indexes[j][0] && indexes[i][1] < indexes[j][1])
+	})
 
 	if e.editCount > editCount {
 		return
 	}
-	e.motionwIndexesPerLine = indexesPerLine
-	e.motionwIndexesPerLineReverse = indexesPerLineReverse
-	// panic(fmt.Sprintf("%+v", indexesPerLine))
+	e.motionIndexes["w"] = indexes
 }
 
 func (e *Editor) buildMotioneIndexes(editCount uint64) {
@@ -1007,7 +1009,7 @@ func (e *Editor) InputHandler() func(event *tcell.EventKey, setFocus func(p tvie
 }
 
 // n must be more than or equal to 1
-func (e *Editor) GetMotion(m string, n int) [2]int {
+func (e *Editor) GetNextMotion(m string, n int) [2]int {
 	if e.motionIndexes[m] == nil {
 		return e.cursor
 	}
@@ -1035,6 +1037,47 @@ func (e *Editor) GetMotion(m string, n int) [2]int {
 		}
 	}
 	return e.motionIndexes[m][(0+n)%len(e.motionIndexes[m])]
+}
+
+// n must be greater or equal to 1
+func (e *Editor) GetPrevMotion(m string, n int) [2]int {
+	if e.motionIndexes[m] == nil {
+		return e.cursor
+	}
+	if len(e.motionIndexes[m]) == 1 {
+		return e.motionIndexes[m][0]
+	}
+	if n < 1 {
+		n = 1
+	}
+	n--
+
+	row := e.cursor[0]
+	col := e.cursor[1]
+	widestLine := 0
+	for _, spans := range e.spansPerLines {
+		if len(spans) > widestLine {
+			widestLine = len(spans)
+		}
+	}
+
+	for i, _ := range e.motionIndexes[m] {
+		i = len(e.motionIndexes[m]) - 1 - i
+		index := e.motionIndexes[m][i]
+
+		if index[0] > row {
+			continue
+		}
+
+		if index[0] < row {
+			col = widestLine
+		}
+
+		if index[1] < col {
+			return e.motionIndexes[m][(i-n)%len(e.motionIndexes[m])]
+		}
+	}
+	return e.motionIndexes[m][(0-n)%len(e.motionIndexes[m])]
 }
 
 func (e *Editor) MoveCursorRight() {
@@ -1494,5 +1537,9 @@ func (e *Editor) MoveCursorFirstNonWhitespace() {
 }
 
 func (e *Editor) MoveMotion(motion string, n int) {
-	e.cursor = e.GetMotion(motion, n)
+	if n < 0 {
+		e.cursor = e.GetPrevMotion(motion, n*-1)
+		return
+	}
+	e.cursor = e.GetNextMotion(motion, n)
 }
