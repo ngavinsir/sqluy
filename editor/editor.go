@@ -30,28 +30,28 @@ type (
 	}
 
 	Editor struct {
+		keymapper     keymapper
 		viewModalFunc func(string)
 		onDoneFunc    func(string)
 		*tview.Box
 		searchEditor                 *Editor
-		text                         string
-		pending                      []string
+		actionRunner                 map[Action]func()
 		motionIndexes                map[string][][2]int
+		text                         string
+		undoStack                    []undoStackItem
 		motionwIndexesPerLine        [][]int
 		searchIndexesPerLine         [][]int
-		spansPerLines                [][]span
-		undoStack                    []undoStackItem
 		motionwIndexesPerLineReverse [][]int
+		pending                      []string
+		spansPerLines                [][]span
 		cursor                       [2]int
 		offsets                      [2]int
-		undoOffset                   int
 		tabSize                      int
 		editCount                    uint64
+		undoOffset                   int
 		mode                         mode
 		oneLineMode                  bool
 		isSearching                  bool
-		keymapper                    keymapper
-		actionRunner                 map[Action]func()
 	}
 )
 
@@ -421,6 +421,38 @@ func New(km keymapper) *Editor {
 		e.SetText(b.String(), e.cursor)
 	}
 	    `, [2]int{0, 0})
+
+	e.actionRunner = map[Action]func(){
+		ActionMoveLeft:     e.MoveCursorLeft,
+		ActionMoveUp:       e.MoveCursorUp,
+		ActionMoveRight:    e.MoveCursorRight,
+		ActionMoveDown:     e.MoveCursorDown,
+		ActionDone:         e.Done,
+		ActionEnableSearch: e.EnableSearch,
+		ActionInsert: func() {
+			e.ChangeMode(insert)
+		},
+		ActionRedo:                   e.Redo,
+		ActionUndo:                   e.Undo,
+		ActionMoveHalfPageDown:       e.MoveCursorHalfPageDown,
+		ActionMoveHalfPageUp:         e.MoveCursorHalfPageUp,
+		ActionDeleteUnderCursor:      e.DeleteUnderCursor,
+		ActionInsertAfter:            e.InsertAfter,
+		ActionInsertEndOfLine:        e.InsertEndOfLine,
+		ActionMoveEndOfLine:          e.MoveCursorEndOfLine,
+		ActionMoveStartOfLine:        e.MoveCursorStartOfLine,
+		ActionMoveFirstNonWhitespace: e.MoveCursorFirstNonWhitespace,
+		ActionInsertBelow:            e.InsertBelow,
+		ActionInsertAbove:            e.InsertAbove,
+		ActionChangeUntilEndOfLine:   e.ChangeUntilEndOfLine,
+		ActionDeleteUntilEndOfLine:   e.DeleteUntilEndOfLine,
+		ActionDeleteLine:             e.DeleteLine,
+		ActionReplace: func() {
+			e.ChangeMode(replace)
+		},
+		ActionMoveLastLine:  e.MoveCursorLastLine,
+		ActionMoveFirstLine: e.MoveCursorFirstLine,
+	}
 
 	return e
 }
@@ -835,8 +867,8 @@ func (e *Editor) InputHandler() func(event *tcell.EventKey, setFocus func(p tvie
 		}
 
 		action, anyStartWith := e.keymapper.Get(e.pending, group)
-		if action != "" && e.actionRunner[action] != nil {
-			e.actionRunner[action]()
+		if action != "" && e.actionRunner[ActionFromString(action)] != nil {
+			e.actionRunner[ActionFromString(action)]()
 			e.pending = nil
 			return
 		}
@@ -844,165 +876,79 @@ func (e *Editor) InputHandler() func(event *tcell.EventKey, setFocus func(p tvie
 			return
 		}
 		e.pending = nil
-		return
+		// return
 
 		switch e.mode {
 		case normal:
-			switch key := event.Key(); key {
-			case tcell.KeyLeft:
-				e.MoveCursorLeft()
-			case tcell.KeyRight:
-				e.MoveCursorRight()
-			case tcell.KeyDown:
-				e.MoveCursorDown()
-			case tcell.KeyUp:
-				e.MoveCursorUp()
-			case tcell.KeyEnter:
-				if e.oneLineMode && e.onDoneFunc != nil {
-					e.onDoneFunc(e.text)
-				}
-			case tcell.KeyCtrlR:
-				e.Redo()
-			case tcell.KeyCtrlU:
-				e.MoveCursorHalfPageUp()
-			case tcell.KeyCtrlD:
-				e.MoveCursorHalfPageDown()
-			case tcell.KeyRune:
-				r := event.Rune()
-				switch r {
-				case '/':
-					e.EnableSearch()
-					return
-				case 'i':
-					e.ChangeMode(insert)
-					return
-				case 'x':
-					e.DeleteUnderCursor()
-					return
-				case 'u':
-					e.Undo()
-					return
-				case 'o':
-					if e.oneLineMode {
-						return
-					}
-					e.InsertBelow()
-				case 'O':
-					if e.oneLineMode {
-						return
-					}
-					e.InsertAbove()
-				case 'C':
-					e.ChangeUntilEndOfLine()
-					return
-				case 'D':
-					e.DeleteUntilEndOfLine()
-					return
-				case 'd':
-					e.DeleteLine()
-					return
-				}
-			case 'a':
-				e.InsertAfter()
-				return
-			case 'A':
-				e.InsertEndOfLine()
-				return
-			case '$':
-				e.MoveCursorEndOfLine()
-				return
-			case '0':
-				e.MoveCursorStartOfLine()
-				return
-			case '^':
-				e.MoveCursorFirstNonWhitespace()
-				return
-			case 'n':
-				cursorColumn := e.cursor[1]
-				for i, indexes := range e.searchIndexesPerLine[e.cursor[0]:] {
-					for _, idx := range indexes {
-						if idx > cursorColumn {
-							if idx <= len(e.spansPerLines[i+e.cursor[0]])-1 {
-								e.cursor[1] = idx
-								e.cursor[0] = i + e.cursor[0]
-								return
-							}
-						}
-					}
-					cursorColumn = -1
-				}
-				for i, indexes := range e.searchIndexesPerLine[:e.cursor[0]] {
-					for _, idx := range indexes {
-						if idx > cursorColumn {
-							if idx <= len(e.spansPerLines[e.cursor[0]])-1 {
-								e.cursor[1] = idx
-								e.cursor[0] = i
-								return
-							}
-						}
-					}
-					cursorColumn = -1
-				}
-				return
-			case 'w':
-				cursorColumn := e.cursor[1]
-				for _, indexes := range e.motionwIndexesPerLine[e.cursor[0]:] {
-					for _, idx := range indexes {
-						if idx > cursorColumn {
-							if idx <= len(e.spansPerLines[e.cursor[0]])-1 {
-								e.cursor[1] = idx
-								return
-							}
-						}
-					}
-					if e.cursor[0] < len(e.spansPerLines)-1 {
-						e.cursor[0]++
-						cursorColumn = -1
-					}
-				}
-				return
-			case 'b':
-				cursorColumn := e.cursor[1]
-				for _, indexes := range e.motionwIndexesPerLineReverse[len(e.spansPerLines)-1-e.cursor[0]:] {
-					for _, idx := range indexes {
-						if idx < cursorColumn {
-							if idx >= 0 {
-								e.cursor[1] = idx
-								return
-							}
-						}
-					}
-					if e.cursor[0] > 0 {
-						e.cursor[0]--
-						cursorColumn = len(e.spansPerLines[e.cursor[0]])
-					}
-				}
-				return
-			case 'e':
-				return
-			case 'r':
-				e.mode = replace
-				return
-			case 'G':
-				e.MoveCursorLastLine()
-				return
-			case 'g':
-				e.MoveCursorFirstLine()
-				return
-			}
+		// switch key := event.Key(); key {
+		// case 'n':
+		// 	cursorColumn := e.cursor[1]
+		// 	for i, indexes := range e.searchIndexesPerLine[e.cursor[0]:] {
+		// 		for _, idx := range indexes {
+		// 			if idx > cursorColumn {
+		// 				if idx <= len(e.spansPerLines[i+e.cursor[0]])-1 {
+		// 					e.cursor[1] = idx
+		// 					e.cursor[0] = i + e.cursor[0]
+		// 					return
+		// 				}
+		// 			}
+		// 		}
+		// 		cursorColumn = -1
+		// 	}
+		// 	for i, indexes := range e.searchIndexesPerLine[:e.cursor[0]] {
+		// 		for _, idx := range indexes {
+		// 			if idx > cursorColumn {
+		// 				if idx <= len(e.spansPerLines[e.cursor[0]])-1 {
+		// 					e.cursor[1] = idx
+		// 					e.cursor[0] = i
+		// 					return
+		// 				}
+		// 			}
+		// 		}
+		// 		cursorColumn = -1
+		// 	}
+		// 	return
+		// case 'w':
+		// 	cursorColumn := e.cursor[1]
+		// 	for _, indexes := range e.motionwIndexesPerLine[e.cursor[0]:] {
+		// 		for _, idx := range indexes {
+		// 			if idx > cursorColumn {
+		// 				if idx <= len(e.spansPerLines[e.cursor[0]])-1 {
+		// 					e.cursor[1] = idx
+		// 					return
+		// 				}
+		// 			}
+		// 		}
+		// 		if e.cursor[0] < len(e.spansPerLines)-1 {
+		// 			e.cursor[0]++
+		// 			cursorColumn = -1
+		// 		}
+		// 	}
+		// 	return
+		// case 'b':
+		// 	cursorColumn := e.cursor[1]
+		// 	for _, indexes := range e.motionwIndexesPerLineReverse[len(e.spansPerLines)-1-e.cursor[0]:] {
+		// 		for _, idx := range indexes {
+		// 			if idx < cursorColumn {
+		// 				if idx >= 0 {
+		// 					e.cursor[1] = idx
+		// 					return
+		// 				}
+		// 			}
+		// 		}
+		// 		if e.cursor[0] > 0 {
+		// 			e.cursor[0]--
+		// 			cursorColumn = len(e.spansPerLines[e.cursor[0]])
+		// 		}
+		// 	}
+		// 	return
+		// case 'e':
+		// 	return
 
 		case replace:
 			switch key := event.Key(); key {
 			case tcell.KeyEsc:
-				e.mode = normal
-			case tcell.KeyLeft:
-				e.MoveCursorLeft()
-			case tcell.KeyRight:
-				e.MoveCursorRight()
-			case tcell.KeyDown:
-				e.MoveCursorDown()
-			case tcell.KeyUp:
-				e.MoveCursorUp()
+				e.ChangeMode(normal)
 			case tcell.KeyRune:
 				text := string(event.Rune())
 				from := e.cursor
@@ -1018,14 +964,6 @@ func (e *Editor) InputHandler() func(event *tcell.EventKey, setFocus func(p tvie
 				if e.cursor[1] == len(e.spansPerLines[e.cursor[0]])-1 {
 					e.MoveCursorLeft()
 				}
-			case tcell.KeyLeft:
-				e.MoveCursorLeft()
-			case tcell.KeyRight:
-				e.MoveCursorRight()
-			case tcell.KeyDown:
-				e.MoveCursorDown()
-			case tcell.KeyUp:
-				e.MoveCursorUp()
 			case tcell.KeyRune:
 				text := string(event.Rune())
 				e.ReplaceText(text, e.cursor, e.cursor)
@@ -1063,7 +1001,6 @@ func (e *Editor) InputHandler() func(event *tcell.EventKey, setFocus func(p tvie
 				e.cursor = from
 				e.SaveChanges()
 				e.undoOffset--
-				// panic(errors.New(fmt.Sprintf("cursor: %+v\noffset: %+v\n", e.cursor, e.offsets)))
 			}
 		}
 	})

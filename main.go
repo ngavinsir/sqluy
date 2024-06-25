@@ -22,15 +22,15 @@ type (
 var keymapString string
 
 func main() {
-	km := keymap.New(keymapString)
 	var wg sync.WaitGroup
 	ctx, cancel := context.WithCancel(context.Background())
+	km := keymap.New(keymapString)
 
 	modalChan := make(chan ShowModalArg)
 
 	page := tview.NewPages()
 
-	e := editor.New(false)
+	e := editor.New(km)
 	e.SetViewModalFunc(func(text string) {
 		var wg sync.WaitGroup
 		modalChan <- ShowModalArg{Text: text, Wg: &wg, Refocus: e}

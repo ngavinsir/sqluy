@@ -1,5 +1,7 @@
 package editor
 
+import "sync"
+
 type Action uint64
 
 const (
@@ -58,7 +60,8 @@ var actionMapper = map[Action]string{
 	ActionMoveLastLine:           "move_last_line",
 	ActionMoveFirstLine:          "move_first_line",
 }
-var reverseActionMapper map[Action]string
+var reverseActionMapper map[string]Action
+var reverseActionMapperOnce sync.Once
 
 func (a Action) String() string {
 	if actionMapper[a] != "" {
@@ -67,6 +70,13 @@ func (a Action) String() string {
 	return "editor.none"
 }
 
-func FromString(s string) Action {
+func ActionFromString(s string) Action {
+	reverseActionMapperOnce.Do(func() {
+		reverseActionMapper = make(map[string]Action, len(actionMapper))
+		for k, v := range actionMapper {
+			reverseActionMapper["editor."+v] = k
+		}
+	})
 
+	return reverseActionMapper[s]
 }

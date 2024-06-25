@@ -7,7 +7,10 @@
       "groups": [
         "n",
         "i",
-        "r"
+        "r",
+        "on",
+        "oi",
+        "or"
       ],
       "action": "editor.move_left"
     },
@@ -18,7 +21,10 @@
       "groups": [
         "n",
         "i",
-        "r"
+        "r",
+        "on",
+        "oi",
+        "or"
       ],
       "action": "editor.move_right"
     },
@@ -29,7 +35,10 @@
       "groups": [
         "n",
         "i",
-        "r"
+        "r",
+        "on",
+        "oi",
+        "or"
       ],
       "action": "editor.move_up"
     },
@@ -40,7 +49,10 @@
       "groups": [
         "n",
         "i",
-        "r"
+        "r",
+        "on",
+        "oi",
+        "or"
       ],
       "action": "editor.move_down"
     },
@@ -50,9 +62,207 @@
         "d"
       ],
       "groups": [
-        "n"
+        "n",
+        "on"
       ],
       "action": "editor.delete_line"
+    },
+    {
+      "keys": [
+        "enter"
+      ],
+      "groups": [
+        "on",
+        "oi",
+        "or"
+      ],
+      "action": "editor.done"
+    },
+    {
+      "keys": [
+        "ctrl+r"
+      ],
+      "groups": [
+        "n",
+        "on"
+      ],
+      "action": "editor.redo"
+    },
+    {
+      "keys": [
+        "u"
+      ],
+      "groups": [
+        "n",
+        "on"
+      ],
+      "action": "editor.undo"
+    },
+    {
+      "keys": [
+        "ctrl+u"
+      ],
+      "groups": [
+        "n"
+      ],
+      "action": "editor.move_half_page_up"
+    },
+    {
+      "keys": [
+        "ctrl+d"
+      ],
+      "groups": [
+        "n"
+      ],
+      "action": "editor.move_half_page_down"
+    },
+    {
+      "keys": [
+        "/"
+      ],
+      "groups": [
+        "n"
+      ],
+      "action": "editor.enable_search"
+    },
+    {
+      "keys": [
+        "i"
+      ],
+      "groups": [
+        "n",
+        "on"
+      ],
+      "action": "editor.insert"
+    },
+    {
+      "keys": [
+        "x"
+      ],
+      "groups": [
+        "n",
+        "on"
+      ],
+      "action": "editor.delete_under_cursor"
+    },
+    {
+      "keys": [
+        "o"
+      ],
+      "groups": [
+        "n"
+      ],
+      "action": "editor.insert_below"
+    },
+    {
+      "keys": [
+        "O"
+      ],
+      "groups": [
+        "n"
+      ],
+      "action": "editor.insert_above"
+    },
+    {
+      "keys": [
+        "C"
+      ],
+      "groups": [
+        "n",
+        "on"
+      ],
+      "action": "editor.change_until_end_of_line"
+    },
+    {
+      "keys": [
+        "D"
+      ],
+      "groups": [
+        "n",
+        "on"
+      ],
+      "action": "editor.delete_until_end_of_line"
+    },
+    {
+      "keys": [
+        "a"
+      ],
+      "groups": [
+        "n",
+        "on"
+      ],
+      "action": "editor.insert_after"
+    },
+    {
+      "keys": [
+        "A"
+      ],
+      "groups": [
+        "n",
+        "on"
+      ],
+      "action": "editor.insert_end_of_line"
+    },
+    {
+      "keys": [
+        "$"
+      ],
+      "groups": [
+        "n",
+        "on"
+      ],
+      "action": "editor.move_end_of_line"
+    },
+    {
+      "keys": [
+        "0"
+      ],
+      "groups": [
+        "n",
+        "on"
+      ],
+      "action": "editor.move_start_of_line"
+    },
+    {
+      "keys": [
+        "^"
+      ],
+      "groups": [
+        "n",
+        "on"
+      ],
+      "action": "editor.move_first_non_whitespace"
+    },
+    {
+      "keys": [
+        "r"
+      ],
+      "groups": [
+        "n",
+        "on"
+      ],
+      "action": "editor.replace"
+    },
+    {
+      "keys": [
+        "G"
+      ],
+      "groups": [
+        "n",
+        "on"
+      ],
+      "action": "editor.move_last_line"
+    },
+    {
+      "keys": [
+        "g",
+        "g"
+      ],
+      "groups": [
+        "n",
+        "on"
+      ],
+      "action": "editor.move_first_line"
     }
   ]
 }
