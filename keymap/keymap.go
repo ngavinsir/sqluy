@@ -32,7 +32,9 @@ func (k *keyTree) Add(keys []string, action string) {
 		k.childs[keys[0]] = &keyTree{action: action}
 		return
 	}
-	k.childs[keys[0]] = &keyTree{}
+	if k.childs[keys[0]] == nil {
+		k.childs[keys[0]] = &keyTree{}
+	}
 	k.childs[keys[0]].Add(keys[1:], action)
 }
 

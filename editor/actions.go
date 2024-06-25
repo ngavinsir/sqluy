@@ -34,6 +34,7 @@ const (
 	ActionMoveEndOfWord
 	ActionMoveStartOfWord
 	ActionMoveBackStartOfWord
+	ActionMoveBackEndOfWord
 )
 
 var actionMapper = map[Action]string{
@@ -65,6 +66,7 @@ var actionMapper = map[Action]string{
 	ActionMoveEndOfWord:          "move_end_of_word",
 	ActionMoveStartOfWord:        "move_start_of_word",
 	ActionMoveBackStartOfWord:    "move_back_start_of_word",
+	ActionMoveBackEndOfWord:      "move_back_end_of_word",
 }
 var reverseActionMapper map[string]Action
 var reverseActionMapperOnce sync.Once

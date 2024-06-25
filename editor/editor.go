@@ -458,6 +458,9 @@ func New(km keymapper) *Editor {
 		ActionMoveBackStartOfWord: func() {
 			e.MoveMotion("w", -1)
 		},
+		ActionMoveBackEndOfWord: func() {
+			e.MoveMotion("e", -1)
+		},
 	}
 
 	return e
@@ -1036,6 +1039,11 @@ func (e *Editor) GetNextMotion(m string, n int) [2]int {
 			return e.motionIndexes[m][(i+n)%len(e.motionIndexes[m])]
 		}
 	}
+
+	if strings.ToLower(m) != "n" {
+		return e.cursor
+	}
+
 	return e.motionIndexes[m][(0+n)%len(e.motionIndexes[m])]
 }
 
@@ -1074,10 +1082,22 @@ func (e *Editor) GetPrevMotion(m string, n int) [2]int {
 		}
 
 		if index[1] < col {
-			return e.motionIndexes[m][(i-n)%len(e.motionIndexes[m])]
+			idx := (i - n) % len(e.motionIndexes[m])
+			if idx < 0 {
+				idx += len(e.motionIndexes[m])
+			}
+			return e.motionIndexes[m][idx]
 		}
 	}
-	return e.motionIndexes[m][(0-n)%len(e.motionIndexes[m])]
+
+	if strings.ToLower(m) != "n" {
+		return e.cursor
+	}
+	idx := (len(e.motionIndexes[m]) - 1 - n) % len(e.motionIndexes[m])
+	if idx < 0 {
+		idx += len(e.motionIndexes[m])
+	}
+	return e.motionIndexes[m][idx]
 }
 
 func (e *Editor) MoveCursorRight() {

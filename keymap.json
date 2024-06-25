@@ -167,6 +167,17 @@
     },
     {
       "keys": [
+        "g",
+        "e"
+      ],
+      "groups": [
+        "n",
+        "on"
+      ],
+      "action": "editor.move_back_end_of_word"
+    },
+    {
+      "keys": [
         "x"
       ],
       "groups": [
