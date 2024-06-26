@@ -48,39 +48,8 @@ type (
 		undoOffset    int
 		mode          mode
 		oneLineMode   bool
-		isSearching   bool
 	}
 )
-
-type mode uint8
-
-const (
-	normal mode = iota
-	insert
-	replace
-)
-
-func (m mode) String() string {
-	switch m {
-	case insert:
-		return "INSERT"
-	case replace:
-		return "REPLACE"
-	default:
-		return "NORMAL"
-	}
-}
-
-func (m mode) ShortString() string {
-	switch m {
-	case insert:
-		return "i"
-	case replace:
-		return "r"
-	default:
-		return "n"
-	}
-}
 
 func New(km keymapper) *Editor {
 	e := &Editor{
@@ -523,7 +492,6 @@ func (e *Editor) SetText(text string, cursor [2]int) *Editor {
 		spans[j] = span{runes: nil, width: 1}
 		e.spansPerLines[i] = spans
 	}
-	// panic(errors.New(fmt.Sprintf("%+v\n", e.spansPerLines[0])))
 
 	e.motionIndexes = make(map[string][][2]int)
 	go e.buildMotionwIndexes(e.editCount)
@@ -572,11 +540,6 @@ func (e *Editor) buildSearchIndexes(query string) bool {
 }
 
 func (e *Editor) buildMotionwIndexes(editCount uint64) {
-	defer func() {
-		if r := recover(); r != nil {
-			panic(r)
-		}
-	}()
 	rgOne := regexp.MustCompile(`(?:^|[^a-zA-Z0-9_À-ÿ])([a-zA-Z0-9_À-ÿ])`)
 	rgTwo := regexp.MustCompile(`(?:^|[a-zA-Z0-9_À-ÿ\s])([^a-zA-Z0-9_À-ÿ\s])`)
 
@@ -695,29 +658,8 @@ func (e *Editor) Draw(screen tcell.Screen) {
 		tview.Print(screen, "("+e.mode.ShortString()+") ", x, y, 4, tview.AlignLeft, tcell.ColorYellow)
 		x += 4
 		w -= 4
-	} else if e.isSearching {
-		se := e.searchEditor
-		if se == nil {
-			se = New(e.keymapper).SetOneLineMode(true)
-			se.SetText("", [2]int{0, 0})
-			se.SetRect(x, y+h-1, w, 1)
-			se.mode = insert
-			se.onDoneFunc = func(s string) {
-				e.isSearching = false
-				e.searchEditor = nil
-
-				foundMatches := e.buildSearchIndexes(s)
-				if !foundMatches {
-					e.mode = normal
-				} else {
-					e.mode = normal
-					e.MoveMotion("n", 1)
-				}
-			}
-			e.searchEditor = se
-		}
-
-		defer se.Draw(screen)
+	} else if e.searchEditor != nil {
+		defer e.searchEditor.Draw(screen)
 	} else {
 		modeColor := tcell.ColorLightGray
 		// modeBg := tcell.ColorWhite
@@ -833,7 +775,7 @@ func (e *Editor) Draw(screen tcell.Screen) {
 		textX = x
 	}
 
-	if !e.isSearching {
+	if e.searchEditor == nil {
 		cursorStyle := tcell.CursorStyleSteadyBlock
 		if e.mode == insert {
 			cursorStyle = tcell.CursorStyleSteadyBar
@@ -1381,7 +1323,23 @@ func (e *Editor) Redo() {
 }
 
 func (e *Editor) EnableSearch() {
-	e.isSearching = true
+	x, y, w, h := e.Box.GetInnerRect()
+	se := New(e.keymapper).SetOneLineMode(true)
+	se.SetText("", [2]int{0, 0})
+	se.SetRect(x, y+h-1, w, 1)
+	se.mode = insert
+	se.onDoneFunc = func(s string) {
+		e.searchEditor = nil
+
+		foundMatches := e.buildSearchIndexes(s)
+		if !foundMatches {
+			e.mode = normal
+		} else {
+			e.mode = normal
+			e.MoveMotion("n", 1)
+		}
+	}
+	e.searchEditor = se
 }
 
 func (e *Editor) ChangeMode(m mode) {
