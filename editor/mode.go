@@ -6,6 +6,7 @@ const (
 	normal mode = iota
 	insert
 	replace
+	visual
 )
 
 func (m mode) String() string {
@@ -14,6 +15,8 @@ func (m mode) String() string {
 		return "INSERT"
 	case replace:
 		return "REPLACE"
+	case visual:
+		return "VISUAL"
 	default:
 		return "NORMAL"
 	}
@@ -25,6 +28,8 @@ func (m mode) ShortString() string {
 		return "i"
 	case replace:
 		return "r"
+	case visual:
+		return "v"
 	default:
 		return "n"
 	}

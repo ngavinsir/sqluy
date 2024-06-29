@@ -6,6 +6,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/gdamore/tcell/v2"
@@ -52,7 +53,9 @@ type (
 		undoStack     []undoStackItem
 		decorators    []decorator
 		cursor        [2]int
+		visualStart   [2]int
 		offsets       [2]int
+		pendingCount  int
 		tabSize       int
 		editCount     uint64
 		undoOffset    int
@@ -396,7 +399,7 @@ func New(km keymapper) *Editor {
 
 		e.SetText(b.String(), e.cursor)
 	}
-	    `, [2]int{0, 0})
+	    `, [2]int{3, 8})
 
 	e.onExitFunc = func() {
 		e.motionIndexes["n"] = nil
@@ -431,8 +434,17 @@ func New(km keymapper) *Editor {
 		ActionReplace: func() {
 			e.ChangeMode(replace)
 		},
-		ActionMoveLastLine:  e.MoveCursorLastLine,
-		ActionMoveFirstLine: e.MoveCursorFirstLine,
+		ActionMoveLastLine: func() {
+			n := len(e.spansPerLines) - 1
+			if e.pendingCount > 0 {
+				n = e.pendingCount - 1
+			}
+			e.MoveCursorToLine(n)
+		},
+		ActionMoveFirstLine: func() {
+			n := e.pendingCount - 1
+			e.MoveCursorToLine(n)
+		},
 		ActionMoveEndOfWord: func() {
 			e.MoveMotion("e", 1)
 		},
@@ -725,8 +737,12 @@ func (e *Editor) Draw(screen tcell.Screen) {
 		_, modeWidth := tview.Print(screen, e.mode.String(), x, y+h-1, w, tview.AlignLeft, modeColor)
 		_, modeTxtWidth := tview.Print(screen, " mode", x+modeWidth, y+h-1, w-modeWidth, tview.AlignLeft, tcell.ColorWhite)
 		pendingWidth := 0
-		if len(e.pending) > 0 {
-			_, pendingWidth = tview.Print(screen, "("+strings.Join(e.pending, "")+")", x+modeWidth+modeTxtWidth+1, y+h-1, w-(x+modeWidth+modeTxtWidth), tview.AlignLeft, tcell.ColorYellow)
+		if len(e.pending) > 0 || e.pendingCount > 0 {
+			pendingCountTxt := ""
+			if e.pendingCount > 0 {
+				pendingCountTxt = strconv.Itoa(e.pendingCount)
+			}
+			_, pendingWidth = tview.Print(screen, "("+pendingCountTxt+strings.Join(e.pending, "")+")", x+modeWidth+modeTxtWidth+1, y+h-1, w-(x+modeWidth+modeTxtWidth), tview.AlignLeft, tcell.ColorYellow)
 		}
 		posText := fmt.Sprintf("x: %d/%d y: %d/%d", e.cursor[1]+1, len(e.spansPerLines[e.cursor[0]]), e.cursor[0]+1, len(e.spansPerLines))
 		tview.Print(screen, posText, x+modeWidth+modeTxtWidth+pendingWidth+1, y+h-1, w-(x+modeWidth+modeTxtWidth+pendingWidth+1), tview.AlignRight, tcell.ColorWhite)
@@ -898,6 +914,8 @@ func (e *Editor) InputHandler() func(event *tcell.EventKey, setFocus func(p tvie
 			return
 		}
 
+		isDigit := event.Key() == tcell.KeyRune && unicode.IsDigit(event.Rune())
+
 		eventName := event.Name()
 		if event.Key() == tcell.KeyRune {
 			eventName = string(event.Rune())
@@ -914,13 +932,21 @@ func (e *Editor) InputHandler() func(event *tcell.EventKey, setFocus func(p tvie
 		action, anyStartWith := e.keymapper.Get(e.pending, group)
 		if action != "" && e.actionRunner[ActionFromString(action)] != nil {
 			e.actionRunner[ActionFromString(action)]()
-			e.pending = nil
+			if !isDigit {
+				e.pending = nil
+				e.pendingCount = 0
+				return
+			}
+		}
+		if anyStartWith && !isDigit {
 			return
 		}
-		if anyStartWith {
-			return
-		}
+
 		e.pending = nil
+
+		if isDigit {
+			e.pendingCount = e.pendingCount*10 + int(event.Rune()-'0')
+		}
 
 		// default actions
 		switch e.mode {
@@ -1319,9 +1345,12 @@ func (e *Editor) MoveCursorHalfPageUp() {
 	e.offsets[0] = newRowOffset
 }
 
-func (e *Editor) MoveCursorFirstLine() {
-	if e.cursor[0] <= 1 {
-		return
+func (e *Editor) MoveCursorToLine(n int) {
+	if n < 0 {
+		n = 0
+	}
+	if n > len(e.spansPerLines)-1 {
+		n = len(e.spansPerLines) - 1
 	}
 
 	currentRowWidth := 0
@@ -1329,21 +1358,21 @@ func (e *Editor) MoveCursorFirstLine() {
 		currentRowWidth += span.width
 	}
 
-	firstRowX := 0
-	firstRowWidth := 0
-	for _, span := range e.spansPerLines[0] {
+	targetRowX := 0
+	targetRowWidth := 0
+	for _, span := range e.spansPerLines[n] {
 		if span.runes == nil {
 			break
 		}
-		if firstRowWidth+span.width > currentRowWidth {
+		if targetRowWidth+span.width > currentRowWidth {
 			break
 		}
-		firstRowX++
-		firstRowWidth += span.width
+		targetRowX++
+		targetRowWidth += span.width
 	}
 
-	e.cursor[0] = 0
-	e.cursor[1] = firstRowX
+	e.cursor[0] = n
+	e.cursor[1] = targetRowX
 }
 
 func (e *Editor) ReplaceText(s string, from, until [2]int) {
