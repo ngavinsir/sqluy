@@ -276,6 +276,16 @@
     },
     {
       "keys": [
+        "t"
+      ],
+      "groups": [
+        "n",
+        "on"
+      ],
+      "action": "editor.til"
+    },
+    {
+      "keys": [
         "D"
       ],
       "groups": [

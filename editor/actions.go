@@ -40,6 +40,10 @@ const (
 	ActionMoveBackEndOfWord
 	ActionMoveNextSearch
 	ActionMovePrevSearch
+	ActionTil
+	ActionTilBack
+	ActionFind
+	ActionFindBack
 	ActionExit
 	ActionChange
 	ActionDelete
@@ -48,7 +52,9 @@ const (
 
 var OperatorActions = []Action{ActionChange, ActionDelete, ActionYank}
 var MotionActions = []Action{ActionMoveLeft, ActionMoveRight, ActionMoveUp, ActionMoveDown, ActionMoveEndOfLine, ActionMoveStartOfLine, ActionMoveFirstNonWhitespace,
-	ActionMoveLastLine, ActionMoveFirstLine, ActionMoveEndOfWord, ActionMoveStartOfWord, ActionMoveBackStartOfWord, ActionMoveBackEndOfWord, ActionEnableSearch}
+	ActionMoveLastLine, ActionMoveFirstLine, ActionMoveEndOfWord, ActionMoveStartOfWord, ActionMoveBackStartOfWord, ActionMoveBackEndOfWord, ActionEnableSearch, ActionTil,
+	ActionTilBack, ActionFind, ActionFindBack}
+var WaitingForRuneActions = []Action{ActionTil, ActionTilBack, ActionFind, ActionFindBack}
 
 var actionMapper = map[Action]string{
 	ActionMoveLeft:               "move_left",
@@ -82,6 +88,10 @@ var actionMapper = map[Action]string{
 	ActionMoveBackEndOfWord:      "move_back_end_of_word",
 	ActionMoveNextSearch:         "move_next_search",
 	ActionMovePrevSearch:         "move_prev_search",
+	ActionTil:                    "til",
+	ActionTilBack:                "til_back",
+	ActionFind:                   "find",
+	ActionFindBack:               "find_back",
 	ActionExit:                   "exit",
 	ActionChange:                 "change",
 	ActionDelete:                 "delete",
@@ -103,6 +113,10 @@ func (a Action) IsOperator() bool {
 
 func (a Action) IsMotion() bool {
 	return slices.Contains(MotionActions, a)
+}
+
+func (a Action) IsWaitingForRune() bool {
+	return slices.Contains(WaitingForRuneActions, a)
 }
 
 func ActionFromString(s string) Action {

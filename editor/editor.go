@@ -50,10 +50,11 @@ type (
 		actionRunner     map[Action]func()
 		operatorRunner   map[Action]func(target [2]int)
 		motionRunner     map[Action]func() [2]int
+		runeRunner       map[Action]func(r rune)
 		motionIndexes    map[string][][3]int
 		text             string
-		pending          []string
 		spansPerLines    [][]span
+		pending          []string
 		undoStack        []undoStackItem
 		decorators       []decorator
 		cursor           [2]int
@@ -63,10 +64,10 @@ type (
 		tabSize          int
 		editCount        uint64
 		undoOffset       int
-		mode             mode
-		oneLineMode      bool
 		pendingAction    Action
 		pendingMotion    Action
+		mode             mode
+		oneLineMode      bool
 		waitingForMotion bool
 	}
 )
@@ -470,11 +471,16 @@ func New(km keymapper) *Editor {
 		ActionMoveBackEndOfWord:      e.GetBackEndOfWordCursor,
 		ActionMoveBackStartOfWord:    e.GetBackStartOfWordCursor,
 		ActionEnableSearch:           e.EnableSearch,
+		ActionTil:                    e.GetTilCursor,
 	}
 
 	e.operatorRunner = map[Action]func(target [2]int){
 		ActionNone:   e.MoveCursorTo,
 		ActionChange: e.ChangeUntil,
+	}
+
+	e.runeRunner = map[Action]func(r rune){
+		ActionTil: e.AcceptRuneTil,
 	}
 
 	e.decorators = []decorator{
@@ -563,7 +569,7 @@ func (e *Editor) SetText(text string, cursor [2]int) *Editor {
 	return e
 }
 
-func (e *Editor) buildSearchIndexes(query string) bool {
+func (e *Editor) buildSearchIndexes(query string, prev bool) bool {
 	foundMatches := false
 	rg := regexp.MustCompile(query)
 
@@ -594,11 +600,20 @@ func (e *Editor) buildSearchIndexes(query string) bool {
 			}
 
 			foundMatches = true
-			indexes = append(indexes, [3]int{i, mapper[m[0]], mapper[m[1]-1]})
+			if prev && m[0] > 0 {
+				indexes = append(indexes, [3]int{i, mapper[m[0]-1], mapper[m[1]-1]})
+			} else {
+				indexes = append(indexes, [3]int{i, mapper[m[0]], mapper[m[1]-1]})
+			}
 		}
 	}
 
-	e.motionIndexes["n"] = indexes
+	if prev {
+		e.motionIndexes["t"] = indexes
+		// panic(fmt.Sprintf("%+v", indexes))
+	} else {
+		e.motionIndexes["n"] = indexes
+	}
 	return foundMatches
 }
 
@@ -938,10 +953,6 @@ func (e *Editor) InputHandler() func(event *tcell.EventKey, setFocus func(p tvie
 			return
 		}
 
-		if e.waitingForMotion {
-			return
-		}
-
 		isDigit := event.Key() == tcell.KeyRune && unicode.IsDigit(event.Rune())
 
 		eventName := event.Name()
@@ -960,6 +971,17 @@ func (e *Editor) InputHandler() func(event *tcell.EventKey, setFocus func(p tvie
 		actionString, anyStartWith := e.keymapper.Get(e.pending, group)
 		action := ActionFromString(actionString)
 
+		if e.waitingForMotion && event.Key() != tcell.KeyRune {
+			e.pendingAction = ActionNone
+			e.pendingMotion = ActionNone
+			e.pending = nil
+			e.pendingCount = 0
+			return
+		} else if e.waitingForMotion && e.pendingMotion.IsWaitingForRune() && e.runeRunner[e.pendingMotion] != nil {
+			e.runeRunner[e.pendingMotion](event.Rune())
+			action = e.pendingMotion
+		}
+
 		if action.IsOperator() {
 			e.pendingAction = action
 			e.pending = nil
@@ -969,6 +991,7 @@ func (e *Editor) InputHandler() func(event *tcell.EventKey, setFocus func(p tvie
 		if action.IsMotion() && e.motionRunner[action] != nil {
 			m := e.motionRunner[action]()
 			if isAsyncMotion(m) {
+				e.pendingMotion = action
 				return
 			}
 
@@ -977,6 +1000,7 @@ func (e *Editor) InputHandler() func(event *tcell.EventKey, setFocus func(p tvie
 			e.pendingMotion = ActionNone
 			e.pending = nil
 			e.pendingCount = 0
+			e.waitingForMotion = false
 			return
 		}
 		if e.actionRunner[action] != nil {
@@ -986,6 +1010,7 @@ func (e *Editor) InputHandler() func(event *tcell.EventKey, setFocus func(p tvie
 				e.pendingMotion = ActionNone
 				e.pending = nil
 				e.pendingCount = 0
+				e.waitingForMotion = false
 				return
 			}
 		}
@@ -1489,7 +1514,7 @@ func (e *Editor) EnableSearch() [2]int {
 	se.SetRect(x, y+h-1, w, 1)
 	se.mode = insert
 	se.onDoneFunc = func(s string) {
-		e.buildSearchIndexes(regexp.QuoteMeta(s))
+		e.buildSearchIndexes(regexp.QuoteMeta(s), false)
 		e.operatorRunner[e.pendingAction](e.GetSearchCursor())
 		e.searchEditor = nil
 		e.waitingForMotion = false
@@ -1509,6 +1534,15 @@ func (e *Editor) EnableSearch() [2]int {
 	e.searchEditor = se
 	e.waitingForMotion = true
 	return asyncMotion
+}
+
+func (e *Editor) Find() [2]int {
+	e.waitingForMotion = true
+	return asyncMotion
+}
+
+func (e *Editor) AcceptRuneTil(r rune) {
+	e.buildSearchIndexes(regexp.QuoteMeta(string(r)), true)
 }
 
 func (e *Editor) ChangeMode(m mode) {
@@ -1664,6 +1698,18 @@ func (e *Editor) GetBackEndOfWordCursor() [2]int {
 
 func (e *Editor) GetSearchCursor() [2]int {
 	return e.GetNextMotionCursor("n", e.getActionCount())
+}
+
+func (e *Editor) GetTilCursor() [2]int {
+	if !e.waitingForMotion {
+		return e.Find()
+	}
+
+	c := e.GetNextMotionCursor("t", e.getActionCount())
+	if e.pendingAction != ActionNone {
+		c[1]++
+	}
+	return c
 }
 
 func WriteFile(text string) {
