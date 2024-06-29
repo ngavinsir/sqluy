@@ -1159,23 +1159,12 @@ func (e *Editor) GetPrevMotion(m string, n int) [2]int {
 }
 
 func (e *Editor) MoveCursorRight() {
-	e.cursor = e.GetRightCursor()
+	e.MoveCursorTo(e.GetRightCursor())
 }
 
 func (e *Editor) GetRightCursor() [2]int {
-	maxCol := len(e.spansPerLines[e.cursor[0]]) - 2
-	if e.mode == insert {
-		maxCol++
-	}
-	if maxCol < 0 {
-		maxCol = 0
-	}
-
 	n := e.getActionCount()
 	x := e.cursor[1] + n
-	if x > maxCol {
-		x = maxCol
-	}
 	return [2]int{e.cursor[0], x}
 }
 
@@ -1552,11 +1541,11 @@ func (e *Editor) InsertAbove() {
 }
 
 func (e *Editor) ChangeUntil(until [2]int) {
+	e.mode = insert
 	from := e.cursor
 	e.ReplaceText("", from, until)
 	e.SaveChanges()
 	e.undoOffset--
-	e.mode = insert
 }
 
 func (e *Editor) ChangeUntilEndOfLine() {
