@@ -1011,6 +1011,14 @@ func (e *Editor) InputHandler() func(event *tcell.EventKey, setFocus func(p tvie
 	})
 }
 
+func (e *Editor) getActionCount() int {
+	n := 1 + e.pendingCount
+	if e.pendingCount > 0 {
+		n--
+	}
+	return n
+}
+
 // n must be more than or equal to 1
 func (e *Editor) GetNextMotion(m string, n int) [2]int {
 	if e.motionIndexes[m] == nil {
@@ -1102,15 +1110,19 @@ func (e *Editor) GetPrevMotion(m string, n int) [2]int {
 }
 
 func (e *Editor) MoveCursorRight() {
-	blockOffset := 1
+	maxCol := len(e.spansPerLines[e.cursor[0]]) - 2
 	if e.mode == insert {
-		blockOffset = 0
+		maxCol++
 	}
-	if e.cursor[1]+blockOffset >= len(e.spansPerLines[e.cursor[0]])-1 {
-		return
+	if maxCol < 0 {
+		maxCol = 0
 	}
 
-	e.cursor[1]++
+	n := e.getActionCount()
+	e.cursor[1] += n
+	if e.cursor[1] > maxCol {
+		e.cursor[1] = maxCol
+	}
 }
 
 func (e *Editor) MoveCursorEndOfLine() {
@@ -1131,7 +1143,11 @@ func (e *Editor) MoveCursorLeft() {
 		return
 	}
 
-	e.cursor[1]--
+	n := e.getActionCount()
+	e.cursor[1] -= n
+	if e.cursor[1] < 0 {
+		e.cursor[1] = 0
+	}
 }
 
 func (e *Editor) MoveCursorStartOfLine() {
@@ -1143,39 +1159,8 @@ func (e *Editor) MoveCursorStartOfLine() {
 }
 
 func (e *Editor) MoveCursorDown() {
-	if e.cursor[0] >= len(e.spansPerLines)-1 {
-		return
-	}
-
-	currentRowWidth := 0
-	for _, span := range e.spansPerLines[e.cursor[0]][:e.cursor[1]] {
-		currentRowWidth += span.width
-	}
-
-	blockOffset := 0
-	if e.mode == insert {
-		blockOffset = 1
-	}
-	belowRowX := 0
-	belowRowWidth := 0
-	belowRowSpans := e.spansPerLines[e.cursor[0]+1]
-	maxOffset := len(belowRowSpans) - 2 + blockOffset
-	if maxOffset < 0 {
-		maxOffset = 0
-	}
-	for _, span := range belowRowSpans[:maxOffset] {
-		if span.runes == nil {
-			break
-		}
-		if belowRowWidth+span.width > currentRowWidth {
-			break
-		}
-		belowRowX++
-		belowRowWidth += span.width
-	}
-
-	e.cursor[0]++
-	e.cursor[1] = belowRowX
+	n := e.getActionCount()
+	e.MoveCursorToLine(e.cursor[0] + n)
 }
 
 func (e *Editor) MoveCursorHalfPageDown() {
@@ -1258,39 +1243,8 @@ func (e *Editor) MoveCursorLastLine() {
 }
 
 func (e *Editor) MoveCursorUp() {
-	if e.cursor[0] < 1 {
-		return
-	}
-
-	currentRowWidth := 0
-	for _, span := range e.spansPerLines[e.cursor[0]][:e.cursor[1]] {
-		currentRowWidth += span.width
-	}
-
-	blockOffset := 0
-	if e.mode == insert {
-		blockOffset = 1
-	}
-	aboveRowX := 0
-	aboveRowWidth := 0
-	aboveRowSpans := e.spansPerLines[e.cursor[0]-1]
-	maxOffset := len(aboveRowSpans) - 2 + blockOffset
-	if maxOffset < 0 {
-		maxOffset = 0
-	}
-	for _, span := range aboveRowSpans[:maxOffset] {
-		if span.runes == nil {
-			break
-		}
-		if aboveRowWidth+span.width > currentRowWidth {
-			break
-		}
-		aboveRowX++
-		aboveRowWidth += span.width
-	}
-
-	e.cursor[0]--
-	e.cursor[1] = aboveRowX
+	n := e.getActionCount()
+	e.MoveCursorToLine(e.cursor[0] - n)
 }
 
 func (e *Editor) MoveCursorHalfPageUp() {
@@ -1358,9 +1312,18 @@ func (e *Editor) MoveCursorToLine(n int) {
 		currentRowWidth += span.width
 	}
 
+	blockOffset := 0
+	if e.mode == insert {
+		blockOffset = 1
+	}
 	targetRowX := 0
 	targetRowWidth := 0
-	for _, span := range e.spansPerLines[n] {
+	targetRowSpans := e.spansPerLines[n]
+	maxOffset := len(targetRowSpans) - 2 + blockOffset
+	if maxOffset < 0 {
+		maxOffset = 0
+	}
+	for _, span := range targetRowSpans[:maxOffset] {
 		if span.runes == nil {
 			break
 		}
@@ -1452,11 +1415,15 @@ func (e *Editor) Redo() {
 	if len(e.undoStack) < 1 {
 		return
 	}
-	if e.undoOffset+1 >= len(e.undoStack)-1 {
+	if e.undoOffset+2 > len(e.undoStack)-1 {
 		return
 	}
-	redo := e.undoStack[e.undoOffset+2]
-	e.undoOffset++
+	n := e.getActionCount() + e.undoOffset + 1
+	if n > len(e.undoStack)-1 {
+		n = len(e.undoStack) - 1
+	}
+	redo := e.undoStack[n]
+	e.undoOffset = n - 1
 	e.SetText(redo.text, redo.cursor)
 }
 
@@ -1485,10 +1452,13 @@ func (e *Editor) ChangeMode(m mode) {
 }
 
 func (e *Editor) DeleteUnderCursor() {
-	from := e.cursor
-	until := [2]int{e.cursor[0], e.cursor[1] + 1}
-	e.ReplaceText("", from, until)
-	e.cursor = from
+	n := e.getActionCount() + e.cursor[1]
+	if n > len(e.spansPerLines[e.cursor[0]])-1 {
+		n = len(e.spansPerLines[e.cursor[0]]) - 1
+	}
+	until := [2]int{e.cursor[0], n}
+	e.ReplaceText("", e.cursor, until)
+	e.MoveCursorToLine(e.cursor[0])
 }
 
 func (e *Editor) Undo() {
