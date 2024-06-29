@@ -80,6 +80,17 @@
     },
     {
       "keys": [
+        "esc"
+      ],
+      "groups": [
+        "on",
+        "oi",
+        "or"
+      ],
+      "action": "editor.exit"
+    },
+    {
+      "keys": [
         "ctrl+r"
       ],
       "groups": [

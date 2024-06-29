@@ -37,6 +37,7 @@ const (
 	ActionMoveBackEndOfWord
 	ActionMoveNextSearch
 	ActionMovePrevSearch
+	ActionExit
 )
 
 var actionMapper = map[Action]string{
@@ -71,6 +72,7 @@ var actionMapper = map[Action]string{
 	ActionMoveBackEndOfWord:      "move_back_end_of_word",
 	ActionMoveNextSearch:         "move_next_search",
 	ActionMovePrevSearch:         "move_prev_search",
+	ActionExit:                   "exit",
 }
 var reverseActionMapper map[string]Action
 var reverseActionMapperOnce sync.Once
