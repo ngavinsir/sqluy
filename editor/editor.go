@@ -2,10 +2,12 @@ package editor
 
 import (
 	"fmt"
+	"os"
 	"regexp"
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 	"unicode"
 	"unicode/utf8"
 
@@ -44,33 +46,40 @@ type (
 		onDoneFunc    func(string)
 		onExitFunc    func()
 		*tview.Box
-		searchEditor   *Editor
-		actionRunner   map[Action]func()
-		operatorRunner map[Action]func(target [2]int)
-		motionRunner   map[Action]func() [2]int
-		motionIndexes  map[string][][3]int
-		text           string
-		pending        []string
-		spansPerLines  [][]span
-		undoStack      []undoStackItem
-		decorators     []decorator
-		cursor         [2]int
-		visualStart    [2]int
-		offsets        [2]int
-		pendingCount   int
-		tabSize        int
-		editCount      uint64
-		undoOffset     int
-		mode           mode
-		oneLineMode    bool
-		pendingAction  Action
-		pendingMotion  Action
+		searchEditor     *Editor
+		actionRunner     map[Action]func()
+		operatorRunner   map[Action]func(target [2]int)
+		motionRunner     map[Action]func() [2]int
+		motionIndexes    map[string][][3]int
+		text             string
+		pending          []string
+		spansPerLines    [][]span
+		undoStack        []undoStackItem
+		decorators       []decorator
+		cursor           [2]int
+		visualStart      [2]int
+		offsets          [2]int
+		pendingCount     int
+		tabSize          int
+		editCount        uint64
+		undoOffset       int
+		mode             mode
+		oneLineMode      bool
+		pendingAction    Action
+		pendingMotion    Action
+		waitingForMotion bool
 	}
 )
 
 var (
+	asyncMotion = [2]int{-23, -57}
+
 	rgFirstNonWhitespace = regexp.MustCompile(`\S`)
 )
+
+func isAsyncMotion(c [2]int) bool {
+	return c == asyncMotion
+}
 
 func New(km keymapper) *Editor {
 	e := &Editor{
@@ -414,30 +423,22 @@ func New(km keymapper) *Editor {
 	}
 
 	e.actionRunner = map[Action]func(){
-		ActionMoveLeft:     e.MoveCursorLeft,
-		ActionMoveUp:       e.MoveCursorUp,
-		ActionMoveRight:    e.MoveCursorRight,
-		ActionMoveDown:     e.MoveCursorDown,
-		ActionDone:         e.Done,
-		ActionExit:         e.Exit,
-		ActionEnableSearch: e.EnableSearch,
+		ActionDone: e.Done,
+		ActionExit: e.Exit,
 		ActionInsert: func() {
 			e.ChangeMode(insert)
 		},
-		ActionRedo:                   e.Redo,
-		ActionUndo:                   e.Undo,
-		ActionMoveHalfPageDown:       e.MoveCursorHalfPageDown,
-		ActionMoveHalfPageUp:         e.MoveCursorHalfPageUp,
-		ActionDeleteUnderCursor:      e.DeleteUnderCursor,
-		ActionInsertAfter:            e.InsertAfter,
-		ActionInsertEndOfLine:        e.InsertEndOfLine,
-		ActionMoveEndOfLine:          e.MoveCursorEndOfLine,
-		ActionMoveStartOfLine:        e.MoveCursorStartOfLine,
-		ActionMoveFirstNonWhitespace: e.MoveCursorFirstNonWhitespace,
-		ActionInsertBelow:            e.InsertBelow,
-		ActionInsertAbove:            e.InsertAbove,
-		ActionChangeUntilEndOfLine:   e.ChangeUntilEndOfLine,
-		ActionDeleteUntilEndOfLine:   e.DeleteUntilEndOfLine,
+		ActionRedo:                 e.Redo,
+		ActionUndo:                 e.Undo,
+		ActionMoveHalfPageDown:     e.MoveCursorHalfPageDown,
+		ActionMoveHalfPageUp:       e.MoveCursorHalfPageUp,
+		ActionDeleteUnderCursor:    e.DeleteUnderCursor,
+		ActionInsertAfter:          e.InsertAfter,
+		ActionInsertEndOfLine:      e.InsertEndOfLine,
+		ActionInsertBelow:          e.InsertBelow,
+		ActionInsertAbove:          e.InsertAbove,
+		ActionChangeUntilEndOfLine: e.ChangeUntilEndOfLine,
+		ActionDeleteUntilEndOfLine: e.DeleteUntilEndOfLine,
 		ActionDeleteLine: func() {
 			for range e.getActionCount() {
 				e.DeleteLine()
@@ -445,29 +446,6 @@ func New(km keymapper) *Editor {
 		},
 		ActionReplace: func() {
 			e.ChangeMode(replace)
-		},
-		ActionMoveLastLine: func() {
-			n := len(e.spansPerLines) - 1
-			if e.pendingCount > 0 {
-				n = e.pendingCount - 1
-			}
-			e.MoveCursorToLine(n)
-		},
-		ActionMoveFirstLine: func() {
-			n := e.pendingCount - 1
-			e.MoveCursorToLine(n)
-		},
-		ActionMoveEndOfWord: func() {
-			e.MoveMotion("e", e.getActionCount())
-		},
-		ActionMoveStartOfWord: func() {
-			e.MoveMotion("w", e.getActionCount())
-		},
-		ActionMoveBackStartOfWord: func() {
-			e.MoveMotion("w", -e.getActionCount())
-		},
-		ActionMoveBackEndOfWord: func() {
-			e.MoveMotion("e", -e.getActionCount())
 		},
 		ActionMoveNextSearch: func() {
 			e.MoveMotion("n", e.getActionCount())
@@ -485,6 +463,13 @@ func New(km keymapper) *Editor {
 		ActionMoveUp:                 e.GetUpCursor,
 		ActionMoveLeft:               e.GetLeftCursor,
 		ActionMoveRight:              e.GetRightCursor,
+		ActionMoveLastLine:           e.GetLastLineCursor,
+		ActionMoveFirstLine:          e.GetFirstLineCursor,
+		ActionMoveStartOfWord:        e.GetStartOfWordCursor,
+		ActionMoveEndOfWord:          e.GetEndOfWordCursor,
+		ActionMoveBackEndOfWord:      e.GetBackEndOfWordCursor,
+		ActionMoveBackStartOfWord:    e.GetBackStartOfWordCursor,
+		ActionEnableSearch:           e.EnableSearch,
 	}
 
 	e.operatorRunner = map[Action]func(target [2]int){
@@ -620,6 +605,7 @@ func (e *Editor) buildSearchIndexes(query string) bool {
 func (e *Editor) buildMotionwIndexes(editCount uint64) {
 	defer func() {
 		if r := recover(); r != nil && e.screen != nil {
+			WriteFile(fmt.Sprintf("%+v", r))
 			e.screen.Fini()
 			panic(r)
 		}
@@ -681,6 +667,7 @@ func (e *Editor) buildMotionwIndexes(editCount uint64) {
 func (e *Editor) buildMotioneIndexes(editCount uint64) {
 	defer func() {
 		if r := recover(); r != nil && e.screen != nil {
+			WriteFile(fmt.Sprintf("%+v", r))
 			e.screen.Fini()
 			panic(r)
 		}
@@ -741,6 +728,14 @@ func (e *Editor) buildMotioneIndexes(editCount uint64) {
 }
 
 func (e *Editor) Draw(screen tcell.Screen) {
+	defer func() {
+		if r := recover(); r != nil && e.screen != nil {
+			WriteFile(fmt.Sprintf("%+v", r))
+			e.screen.Fini()
+			panic(r)
+		}
+	}()
+
 	e.screen = screen
 	e.Box.DrawForSubclass(screen, e)
 
@@ -943,6 +938,10 @@ func (e *Editor) InputHandler() func(event *tcell.EventKey, setFocus func(p tvie
 			return
 		}
 
+		if e.waitingForMotion {
+			return
+		}
+
 		isDigit := event.Key() == tcell.KeyRune && unicode.IsDigit(event.Rune())
 
 		eventName := event.Name()
@@ -967,8 +966,13 @@ func (e *Editor) InputHandler() func(event *tcell.EventKey, setFocus func(p tvie
 			return
 		}
 
-		if action.IsMotion() {
-			e.operatorRunner[e.pendingAction](e.motionRunner[action]())
+		if action.IsMotion() && e.motionRunner[action] != nil {
+			m := e.motionRunner[action]()
+			if isAsyncMotion(m) {
+				return
+			}
+
+			e.operatorRunner[e.pendingAction](m)
 			e.pendingAction = ActionNone
 			e.pendingMotion = ActionNone
 			e.pending = nil
@@ -1073,8 +1077,7 @@ func (e *Editor) MoveCursorTo(to [2]int) {
 	e.MoveCursorToLine(e.cursor[0])
 }
 
-// n must be more than or equal to 1
-func (e *Editor) GetNextMotion(m string, n int) [2]int {
+func (e *Editor) GetNextMotionCursor(m string, n int) [2]int {
 	if e.motionIndexes[m] == nil {
 		return e.cursor
 	}
@@ -1111,7 +1114,7 @@ func (e *Editor) GetNextMotion(m string, n int) [2]int {
 }
 
 // n must be greater or equal to 1
-func (e *Editor) GetPrevMotion(m string, n int) [2]int {
+func (e *Editor) GetPrevMotionCursor(m string, n int) [2]int {
 	if e.motionIndexes[m] == nil {
 		return e.cursor
 	}
@@ -1281,6 +1284,10 @@ func (e *Editor) MoveCursorLastLine() {
 
 func (e *Editor) GetLastLineCursor() [2]int {
 	return e.GetLineCursor(len(e.spansPerLines) - 1)
+}
+
+func (e *Editor) GetFirstLineCursor() [2]int {
+	return e.GetLineCursor(0)
 }
 
 func (e *Editor) MoveCursorUp() {
@@ -1475,24 +1482,33 @@ func (e *Editor) Redo() {
 	e.SetText(redo.text, redo.cursor)
 }
 
-func (e *Editor) EnableSearch() {
+func (e *Editor) EnableSearch() [2]int {
 	x, y, w, h := e.Box.GetInnerRect()
 	se := New(e.keymapper).SetOneLineMode(true)
 	se.SetText("", [2]int{0, 0})
 	se.SetRect(x, y+h-1, w, 1)
 	se.mode = insert
 	se.onDoneFunc = func(s string) {
+		e.buildSearchIndexes(regexp.QuoteMeta(s))
+		e.operatorRunner[e.pendingAction](e.GetSearchCursor())
 		e.searchEditor = nil
-
-		foundMatches := e.buildSearchIndexes(s)
-		if foundMatches {
-			e.MoveMotion("n", 1)
-		}
+		e.waitingForMotion = false
+		e.pendingAction = ActionNone
+		e.pendingMotion = ActionNone
+		e.pending = nil
+		e.pendingCount = 0
 	}
 	se.onExitFunc = func() {
 		e.searchEditor = nil
+		e.waitingForMotion = false
+		e.pendingAction = ActionNone
+		e.pendingMotion = ActionNone
+		e.pending = nil
+		e.pendingCount = 0
 	}
 	e.searchEditor = se
+	e.waitingForMotion = true
+	return asyncMotion
 }
 
 func (e *Editor) ChangeMode(m mode) {
@@ -1620,8 +1636,41 @@ func (e *Editor) GetFirstNonWhitespaceCursor() [2]int {
 
 func (e *Editor) MoveMotion(motion string, n int) {
 	if n < 0 {
-		e.cursor = e.GetPrevMotion(motion, n*-1)
+		e.cursor = e.GetPrevMotionCursor(motion, n*-1)
 		return
 	}
-	e.cursor = e.GetNextMotion(motion, n)
+	e.cursor = e.GetNextMotionCursor(motion, n)
+}
+
+func (e *Editor) GetEndOfWordCursor() [2]int {
+	c := e.GetNextMotionCursor("e", e.getActionCount())
+	if e.pendingAction != ActionNone {
+		c[1]++
+	}
+	return c
+}
+
+func (e *Editor) GetStartOfWordCursor() [2]int {
+	return e.GetNextMotionCursor("w", e.getActionCount())
+}
+
+func (e *Editor) GetBackStartOfWordCursor() [2]int {
+	return e.GetPrevMotionCursor("w", e.getActionCount())
+}
+
+func (e *Editor) GetBackEndOfWordCursor() [2]int {
+	return e.GetPrevMotionCursor("e", e.getActionCount())
+}
+
+func (e *Editor) GetSearchCursor() [2]int {
+	return e.GetNextMotionCursor("n", e.getActionCount())
+}
+
+func WriteFile(text string) {
+	f, err := os.Create("~/repos/sqluy/" + strconv.Itoa(int(time.Now().UnixMilli())))
+	if err != nil {
+		panic(err)
+	}
+
+	fmt.Fprint(f, text)
 }
