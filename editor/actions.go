@@ -83,6 +83,9 @@ var actionMapper = map[Action]string{
 	ActionMoveNextSearch:         "move_next_search",
 	ActionMovePrevSearch:         "move_prev_search",
 	ActionExit:                   "exit",
+	ActionChange:                 "change",
+	ActionDelete:                 "delete",
+	ActionYank:                   "yank",
 }
 var reverseActionMapper map[string]Action
 var reverseActionMapperOnce sync.Once

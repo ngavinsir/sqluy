@@ -420,14 +420,14 @@ func New(km keymapper) *Editor {
 		ActionInsert: func() {
 			e.ChangeMode(insert)
 		},
-		ActionRedo:              e.Redo,
-		ActionUndo:              e.Undo,
-		ActionMoveHalfPageDown:  e.MoveCursorHalfPageDown,
-		ActionMoveHalfPageUp:    e.MoveCursorHalfPageUp,
-		ActionDeleteUnderCursor: e.DeleteUnderCursor,
-		ActionInsertAfter:       e.InsertAfter,
-		ActionInsertEndOfLine:   e.InsertEndOfLine,
-		// ActionMoveEndOfLine:          e.MoveCursorEndOfLine,
+		ActionRedo:                   e.Redo,
+		ActionUndo:                   e.Undo,
+		ActionMoveHalfPageDown:       e.MoveCursorHalfPageDown,
+		ActionMoveHalfPageUp:         e.MoveCursorHalfPageUp,
+		ActionDeleteUnderCursor:      e.DeleteUnderCursor,
+		ActionInsertAfter:            e.InsertAfter,
+		ActionInsertEndOfLine:        e.InsertEndOfLine,
+		ActionMoveEndOfLine:          e.MoveCursorEndOfLine,
 		ActionMoveStartOfLine:        e.MoveCursorStartOfLine,
 		ActionMoveFirstNonWhitespace: e.MoveCursorFirstNonWhitespace,
 		ActionInsertBelow:            e.InsertBelow,
@@ -474,10 +474,16 @@ func New(km keymapper) *Editor {
 	}
 
 	e.motionRunner = map[Action]func() [2]int{
-		ActionMoveEndOfLine: e.GetEndOfLineCursor,
+		ActionMoveEndOfLine:   e.GetEndOfLineCursor,
+		ActionMoveStartOfLine: e.GetStartOfLineCursor,
+		ActionMoveDown:        e.GetDownCursor,
+		ActionMoveUp:          e.GetUpCursor,
+		ActionMoveLeft:        e.GetLeftCursor,
+		ActionMoveRight:       e.GetRightCursor,
 	}
 
 	e.operatorRunner = map[Action]func(target [2]int){
+		ActionNone:   e.MoveCursorTo,
 		ActionChange: e.ChangeUntil,
 	}
 
@@ -950,14 +956,20 @@ func (e *Editor) InputHandler() func(event *tcell.EventKey, setFocus func(p tvie
 		actionString, anyStartWith := e.keymapper.Get(e.pending, group)
 		action := ActionFromString(actionString)
 
-		if action.IsOperator() && e.pendingAction != ActionNone {
+		if action.IsOperator() {
 			e.pendingAction = action
+			e.pending = nil
 			return
 		}
-		if action.IsMotion() && e.pendingAction.IsOperator() {
 
+		if action.IsMotion() {
+			e.operatorRunner[e.pendingAction](e.motionRunner[action]())
+			e.pendingAction = ActionNone
+			e.pendingMotion = ActionNone
+			e.pending = nil
+			e.pendingCount = 0
+			return
 		}
-
 		if e.actionRunner[action] != nil {
 			e.actionRunner[action]()
 			if !isDigit {
@@ -1051,6 +1063,11 @@ func (e *Editor) getActionCount() int {
 	return n
 }
 
+func (e *Editor) MoveCursorTo(to [2]int) {
+	e.cursor = to
+	e.MoveCursorToLine(e.cursor[0])
+}
+
 // n must be more than or equal to 1
 func (e *Editor) GetNextMotion(m string, n int) [2]int {
 	if e.motionIndexes[m] == nil {
@@ -1142,6 +1159,10 @@ func (e *Editor) GetPrevMotion(m string, n int) [2]int {
 }
 
 func (e *Editor) MoveCursorRight() {
+	e.cursor = e.GetRightCursor()
+}
+
+func (e *Editor) GetRightCursor() [2]int {
 	maxCol := len(e.spansPerLines[e.cursor[0]]) - 2
 	if e.mode == insert {
 		maxCol++
@@ -1151,10 +1172,15 @@ func (e *Editor) MoveCursorRight() {
 	}
 
 	n := e.getActionCount()
-	e.cursor[1] += n
-	if e.cursor[1] > maxCol {
-		e.cursor[1] = maxCol
+	x := e.cursor[1] + n
+	if x > maxCol {
+		x = maxCol
 	}
+	return [2]int{e.cursor[0], x}
+}
+
+func (e *Editor) MoveCursorEndOfLine() {
+	e.MoveCursorTo(e.GetEndOfLineCursor())
 }
 
 func (e *Editor) GetEndOfLineCursor() [2]int {
@@ -1162,37 +1188,45 @@ func (e *Editor) GetEndOfLineCursor() [2]int {
 		return e.cursor
 	}
 
-	blockOffset := 0
-	if e.mode == insert {
-		blockOffset = 1
-	}
-
-	return [2]int{e.cursor[0], (e.spansPerLines[e.cursor[0]]) - 2 + blockOffset}
+	return [2]int{e.cursor[0], len(e.spansPerLines[e.cursor[0]]) - 1}
 }
 
 func (e *Editor) MoveCursorLeft() {
+	e.cursor = e.GetLeftCursor()
+}
+
+func (e *Editor) GetLeftCursor() [2]int {
 	if e.cursor[1] < 1 {
-		return
+		return e.cursor
 	}
 
 	n := e.getActionCount()
-	e.cursor[1] -= n
-	if e.cursor[1] < 0 {
-		e.cursor[1] = 0
+	x := e.cursor[1] - n
+	if x < 0 {
+		x = 0
 	}
+	return [2]int{e.cursor[0], x}
 }
 
 func (e *Editor) MoveCursorStartOfLine() {
+	e.cursor = e.GetStartOfLineCursor()
+}
+
+func (e *Editor) GetStartOfLineCursor() [2]int {
 	if e.cursor[1] < 1 {
-		return
+		return e.cursor
 	}
 
-	e.cursor[1] = 0
+	return [2]int{e.cursor[0], 0}
 }
 
 func (e *Editor) MoveCursorDown() {
-	n := e.getActionCount()
-	e.MoveCursorToLine(e.cursor[0] + n)
+	e.cursor = e.GetDownCursor()
+}
+
+func (e *Editor) GetDownCursor() [2]int {
+	n := e.getActionCount() + e.cursor[0]
+	return e.GetLineCursor(n)
 }
 
 func (e *Editor) MoveCursorHalfPageDown() {
@@ -1248,35 +1282,20 @@ func (e *Editor) MoveCursorHalfPageDown() {
 }
 
 func (e *Editor) MoveCursorLastLine() {
-	if e.cursor[0] >= len(e.spansPerLines)-2 {
-		return
-	}
+	e.cursor = e.GetLastLineCursor()
+}
 
-	currentRowWidth := 0
-	for _, span := range e.spansPerLines[e.cursor[0]][:e.cursor[1]] {
-		currentRowWidth += span.width
-	}
-
-	lastRowX := 0
-	lastRowWidth := 0
-	for _, span := range e.spansPerLines[len(e.spansPerLines)-1] {
-		if span.runes == nil {
-			break
-		}
-		if lastRowWidth+span.width > currentRowWidth {
-			break
-		}
-		lastRowX++
-		lastRowWidth += span.width
-	}
-
-	e.cursor[0] = len(e.spansPerLines) - 1
-	e.cursor[1] = lastRowX
+func (e *Editor) GetLastLineCursor() [2]int {
+	return e.GetLineCursor(len(e.spansPerLines) - 1)
 }
 
 func (e *Editor) MoveCursorUp() {
-	n := e.getActionCount()
-	e.MoveCursorToLine(e.cursor[0] - n)
+	e.cursor = e.GetUpCursor()
+}
+
+func (e *Editor) GetUpCursor() [2]int {
+	n := e.cursor[0] - e.getActionCount()
+	return e.GetLineCursor(n)
 }
 
 func (e *Editor) MoveCursorHalfPageUp() {
@@ -1332,6 +1351,10 @@ func (e *Editor) MoveCursorHalfPageUp() {
 }
 
 func (e *Editor) MoveCursorToLine(n int) {
+	e.cursor = e.GetLineCursor(n)
+}
+
+func (e *Editor) GetLineCursor(n int) [2]int {
 	if n < 0 {
 		n = 0
 	}
@@ -1366,8 +1389,7 @@ func (e *Editor) MoveCursorToLine(n int) {
 		targetRowWidth += span.width
 	}
 
-	e.cursor[0] = n
-	e.cursor[1] = targetRowX
+	return [2]int{n, targetRowX}
 }
 
 func (e *Editor) ReplaceText(s string, from, until [2]int) {
