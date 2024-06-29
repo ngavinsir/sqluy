@@ -462,7 +462,7 @@ func New(km keymapper) *Editor {
 					continue
 				}
 
-				if col >= idx[1] && col < idx[2] {
+				if col >= idx[1] && col <= idx[2] {
 					return decoration{style: style, text: ""}, true
 				}
 			}
@@ -564,7 +564,7 @@ func (e *Editor) buildSearchIndexes(query string) bool {
 			}
 
 			foundMatches = true
-			indexes = append(indexes, [3]int{i, mapper[m[0]], mapper[m[1]]})
+			indexes = append(indexes, [3]int{i, mapper[m[0]], mapper[m[1]-1]})
 		}
 	}
 
@@ -785,6 +785,7 @@ func (e *Editor) Draw(screen tcell.Screen) {
 		lastLine = len(e.spansPerLines)
 	}
 	for row, spans := range e.spansPerLines[e.offsets[0]:lastLine] {
+		row += e.offsets[0]
 		for col, span := range spans {
 			// skip drawing end line sentinel
 			if span.runes == nil {
@@ -1393,6 +1394,7 @@ func (e *Editor) Exit() {
 		return
 	}
 
+	e.motionIndexes["n"] = nil
 	e.onExitFunc()
 }
 
