@@ -546,6 +546,8 @@ func (e *Editor) SetText(text string, cursor [2]int) *Editor {
 		e.spansPerLines[i] = spans
 	}
 
+	e.MoveCursorToLine(cursor[0])
+
 	e.motionIndexes = make(map[string][][3]int)
 	go e.buildMotionwIndexes(e.editCount)
 	go e.buildMotioneIndexes(e.editCount)
@@ -946,10 +948,12 @@ func (e *Editor) InputHandler() func(event *tcell.EventKey, setFocus func(p tvie
 			return
 		}
 
-		e.pending = nil
-
-		if isDigit {
+		if isDigit && e.mode != insert && e.mode != replace {
 			e.pendingCount = e.pendingCount*10 + int(event.Rune()-'0')
+			e.pending = e.pending[:len(e.pending)-1]
+			return
+		} else {
+			e.pending = nil
 		}
 
 		// default actions
