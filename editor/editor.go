@@ -44,23 +44,27 @@ type (
 		onDoneFunc    func(string)
 		onExitFunc    func()
 		*tview.Box
-		searchEditor  *Editor
-		actionRunner  map[Action]func()
-		motionIndexes map[string][][3]int
-		text          string
-		pending       []string
-		spansPerLines [][]span
-		undoStack     []undoStackItem
-		decorators    []decorator
-		cursor        [2]int
-		visualStart   [2]int
-		offsets       [2]int
-		pendingCount  int
-		tabSize       int
-		editCount     uint64
-		undoOffset    int
-		mode          mode
-		oneLineMode   bool
+		searchEditor   *Editor
+		actionRunner   map[Action]func()
+		operatorRunner map[Action]func(target [2]int)
+		motionRunner   map[Action]func() [2]int
+		motionIndexes  map[string][][3]int
+		text           string
+		pending        []string
+		spansPerLines  [][]span
+		undoStack      []undoStackItem
+		decorators     []decorator
+		cursor         [2]int
+		visualStart    [2]int
+		offsets        [2]int
+		pendingCount   int
+		tabSize        int
+		editCount      uint64
+		undoOffset     int
+		mode           mode
+		oneLineMode    bool
+		pendingAction  Action
+		pendingMotion  Action
 	}
 )
 
@@ -416,14 +420,14 @@ func New(km keymapper) *Editor {
 		ActionInsert: func() {
 			e.ChangeMode(insert)
 		},
-		ActionRedo:                   e.Redo,
-		ActionUndo:                   e.Undo,
-		ActionMoveHalfPageDown:       e.MoveCursorHalfPageDown,
-		ActionMoveHalfPageUp:         e.MoveCursorHalfPageUp,
-		ActionDeleteUnderCursor:      e.DeleteUnderCursor,
-		ActionInsertAfter:            e.InsertAfter,
-		ActionInsertEndOfLine:        e.InsertEndOfLine,
-		ActionMoveEndOfLine:          e.MoveCursorEndOfLine,
+		ActionRedo:              e.Redo,
+		ActionUndo:              e.Undo,
+		ActionMoveHalfPageDown:  e.MoveCursorHalfPageDown,
+		ActionMoveHalfPageUp:    e.MoveCursorHalfPageUp,
+		ActionDeleteUnderCursor: e.DeleteUnderCursor,
+		ActionInsertAfter:       e.InsertAfter,
+		ActionInsertEndOfLine:   e.InsertEndOfLine,
+		// ActionMoveEndOfLine:          e.MoveCursorEndOfLine,
 		ActionMoveStartOfLine:        e.MoveCursorStartOfLine,
 		ActionMoveFirstNonWhitespace: e.MoveCursorFirstNonWhitespace,
 		ActionInsertBelow:            e.InsertBelow,
@@ -467,6 +471,14 @@ func New(km keymapper) *Editor {
 		ActionMovePrevSearch: func() {
 			e.MoveMotion("n", -e.getActionCount())
 		},
+	}
+
+	e.motionRunner = map[Action]func() [2]int{
+		ActionMoveEndOfLine: e.GetEndOfLineCursor,
+	}
+
+	e.operatorRunner = map[Action]func(target [2]int){
+		ActionChange: e.ChangeUntil,
 	}
 
 	e.decorators = []decorator{
@@ -935,10 +947,22 @@ func (e *Editor) InputHandler() func(event *tcell.EventKey, setFocus func(p tvie
 			group = "o" + e.mode.ShortString()
 		}
 
-		action, anyStartWith := e.keymapper.Get(e.pending, group)
-		if action != "" && e.actionRunner[ActionFromString(action)] != nil {
-			e.actionRunner[ActionFromString(action)]()
+		actionString, anyStartWith := e.keymapper.Get(e.pending, group)
+		action := ActionFromString(actionString)
+
+		if action.IsOperator() && e.pendingAction != ActionNone {
+			e.pendingAction = action
+			return
+		}
+		if action.IsMotion() && e.pendingAction.IsOperator() {
+
+		}
+
+		if e.actionRunner[action] != nil {
+			e.actionRunner[action]()
 			if !isDigit {
+				e.pendingAction = ActionNone
+				e.pendingMotion = ActionNone
 				e.pending = nil
 				e.pendingCount = 0
 				return
@@ -1133,9 +1157,9 @@ func (e *Editor) MoveCursorRight() {
 	}
 }
 
-func (e *Editor) MoveCursorEndOfLine() {
+func (e *Editor) GetEndOfLineCursor() [2]int {
 	if e.cursor[1] >= len(e.spansPerLines[e.cursor[0]])-1 {
-		return
+		return e.cursor
 	}
 
 	blockOffset := 0
@@ -1143,7 +1167,7 @@ func (e *Editor) MoveCursorEndOfLine() {
 		blockOffset = 1
 	}
 
-	e.cursor[1] = len(e.spansPerLines[e.cursor[0]]) - 2 + blockOffset
+	return [2]int{e.cursor[0], (e.spansPerLines[e.cursor[0]]) - 2 + blockOffset}
 }
 
 func (e *Editor) MoveCursorLeft() {
@@ -1505,13 +1529,16 @@ func (e *Editor) InsertAbove() {
 	e.mode = insert
 }
 
-func (e *Editor) ChangeUntilEndOfLine() {
+func (e *Editor) ChangeUntil(until [2]int) {
 	from := e.cursor
-	until := [2]int{e.cursor[0], len(e.spansPerLines[e.cursor[0]]) - 1}
 	e.ReplaceText("", from, until)
 	e.SaveChanges()
 	e.undoOffset--
 	e.mode = insert
+}
+
+func (e *Editor) ChangeUntilEndOfLine() {
+	e.ChangeUntil(e.GetEndOfLineCursor())
 }
 
 func (e *Editor) DeleteUntilEndOfLine() {

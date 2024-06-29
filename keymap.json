@@ -246,6 +246,36 @@
     },
     {
       "keys": [
+        "y"
+      ],
+      "groups": [
+        "n",
+        "on"
+      ],
+      "action": "editor.yank"
+    },
+    {
+      "keys": [
+        "d"
+      ],
+      "groups": [
+        "n",
+        "on"
+      ],
+      "action": "editor.delete"
+    },
+    {
+      "keys": [
+        "c"
+      ],
+      "groups": [
+        "n",
+        "on"
+      ],
+      "action": "editor.change"
+    },
+    {
+      "keys": [
         "D"
       ],
       "groups": [

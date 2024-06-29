@@ -1,6 +1,9 @@
 package editor
 
-import "sync"
+import (
+	"slices"
+	"sync"
+)
 
 type Action uint64
 
@@ -38,7 +41,14 @@ const (
 	ActionMoveNextSearch
 	ActionMovePrevSearch
 	ActionExit
+	ActionChange
+	ActionDelete
+	ActionYank
 )
+
+var OperatorActions = []Action{ActionChange, ActionDelete, ActionYank}
+var MotionActions = []Action{ActionMoveLeft, ActionMoveRight, ActionMoveUp, ActionMoveDown, ActionMoveEndOfLine, ActionMoveStartOfLine, ActionMoveFirstNonWhitespace,
+	ActionMoveLastLine, ActionMoveFirstLine, ActionMoveEndOfWord, ActionMoveStartOfWord, ActionMoveBackStartOfWord, ActionMoveBackEndOfWord, ActionEnableSearch}
 
 var actionMapper = map[Action]string{
 	ActionMoveLeft:               "move_left",
@@ -82,6 +92,14 @@ func (a Action) String() string {
 		return "editor." + actionMapper[a]
 	}
 	return "editor.none"
+}
+
+func (a Action) IsOperator() bool {
+	return slices.Contains(OperatorActions, a)
+}
+
+func (a Action) IsMotion() bool {
+	return slices.Contains(MotionActions, a)
 }
 
 func ActionFromString(s string) Action {
