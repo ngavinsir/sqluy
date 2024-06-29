@@ -50,6 +50,7 @@ type (
 		pending       []string
 		spansPerLines [][]span
 		undoStack     []undoStackItem
+		decorators    []decorator
 		cursor        [2]int
 		offsets       [2]int
 		tabSize       int
@@ -57,7 +58,6 @@ type (
 		undoOffset    int
 		mode          mode
 		oneLineMode   bool
-		decorators    []decorator
 	}
 )
 
@@ -398,6 +398,10 @@ func New(km keymapper) *Editor {
 	}
 	    `, [2]int{0, 0})
 
+	e.onExitFunc = func() {
+		e.motionIndexes["n"] = nil
+	}
+
 	e.actionRunner = map[Action]func(){
 		ActionMoveLeft:     e.MoveCursorLeft,
 		ActionMoveUp:       e.MoveCursorUp,
@@ -720,9 +724,12 @@ func (e *Editor) Draw(screen tcell.Screen) {
 		}
 		_, modeWidth := tview.Print(screen, e.mode.String(), x, y+h-1, w, tview.AlignLeft, modeColor)
 		_, modeTxtWidth := tview.Print(screen, " mode", x+modeWidth, y+h-1, w-modeWidth, tview.AlignLeft, tcell.ColorWhite)
+		pendingWidth := 0
 		if len(e.pending) > 0 {
-			tview.Print(screen, "("+strings.Join(e.pending, "")+")", x+modeWidth+modeTxtWidth+1, y+h-1, w-(x+modeWidth+modeTxtWidth), tview.AlignLeft, tcell.ColorYellow)
+			_, pendingWidth = tview.Print(screen, "("+strings.Join(e.pending, "")+")", x+modeWidth+modeTxtWidth+1, y+h-1, w-(x+modeWidth+modeTxtWidth), tview.AlignLeft, tcell.ColorYellow)
 		}
+		posText := fmt.Sprintf("x: %d/%d y: %d/%d", e.cursor[1]+1, len(e.spansPerLines[e.cursor[0]]), e.cursor[0]+1, len(e.spansPerLines))
+		tview.Print(screen, posText, x+modeWidth+modeTxtWidth+pendingWidth+1, y+h-1, w-(x+modeWidth+modeTxtWidth+pendingWidth+1), tview.AlignRight, tcell.ColorWhite)
 		h--
 	}
 
@@ -1394,7 +1401,6 @@ func (e *Editor) Exit() {
 		return
 	}
 
-	e.motionIndexes["n"] = nil
 	e.onExitFunc()
 }
 
