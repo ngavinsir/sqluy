@@ -68,6 +68,10 @@ type (
 	}
 )
 
+var (
+	rgFirstNonWhitespace = regexp.MustCompile(`\S`)
+)
+
 func New(km keymapper) *Editor {
 	e := &Editor{
 		tabSize:   4,
@@ -474,12 +478,13 @@ func New(km keymapper) *Editor {
 	}
 
 	e.motionRunner = map[Action]func() [2]int{
-		ActionMoveEndOfLine:   e.GetEndOfLineCursor,
-		ActionMoveStartOfLine: e.GetStartOfLineCursor,
-		ActionMoveDown:        e.GetDownCursor,
-		ActionMoveUp:          e.GetUpCursor,
-		ActionMoveLeft:        e.GetLeftCursor,
-		ActionMoveRight:       e.GetRightCursor,
+		ActionMoveEndOfLine:          e.GetEndOfLineCursor,
+		ActionMoveStartOfLine:        e.GetStartOfLineCursor,
+		ActionMoveFirstNonWhitespace: e.GetFirstNonWhitespaceCursor,
+		ActionMoveDown:               e.GetDownCursor,
+		ActionMoveUp:                 e.GetUpCursor,
+		ActionMoveLeft:               e.GetLeftCursor,
+		ActionMoveRight:              e.GetRightCursor,
 	}
 
 	e.operatorRunner = map[Action]func(target [2]int){
@@ -1422,7 +1427,7 @@ func (e *Editor) ReplaceText(s string, from, until [2]int) {
 	}
 
 	e.SaveChanges()
-	e.SetText(b.String(), e.cursor)
+	e.SetText(b.String(), from)
 }
 
 func (e *Editor) SaveChanges() {
@@ -1543,6 +1548,9 @@ func (e *Editor) InsertAbove() {
 func (e *Editor) ChangeUntil(until [2]int) {
 	e.mode = insert
 	from := e.cursor
+	if until[0] < from[0] || (until[0] == from[0] && until[1] < from[1]) {
+		from, until = until, from
+	}
 	e.ReplaceText("", from, until)
 	e.SaveChanges()
 	e.undoOffset--
@@ -1598,14 +1606,16 @@ func (e *Editor) InsertEndOfLine() {
 }
 
 func (e *Editor) MoveCursorFirstNonWhitespace() {
-	rg := regexp.MustCompile(`\S`)
-	idx := rg.FindStringIndex(strings.Split(e.text, "\n")[e.cursor[0]])
+	e.MoveCursorTo(e.GetFirstNonWhitespaceCursor())
+}
+
+func (e *Editor) GetFirstNonWhitespaceCursor() [2]int {
+	idx := rgFirstNonWhitespace.FindStringIndex(strings.Split(e.text, "\n")[e.cursor[0]])
 	if len(idx) == 0 {
-		e.cursor[1] = 0
-		return
+		return [2]int{e.cursor[0], 0}
 	}
 
-	e.cursor[1] = idx[0]
+	return [2]int{e.cursor[0], idx[0]}
 }
 
 func (e *Editor) MoveMotion(motion string, n int) {
