@@ -430,7 +430,11 @@ func New(km keymapper) *Editor {
 		ActionInsertAbove:            e.InsertAbove,
 		ActionChangeUntilEndOfLine:   e.ChangeUntilEndOfLine,
 		ActionDeleteUntilEndOfLine:   e.DeleteUntilEndOfLine,
-		ActionDeleteLine:             e.DeleteLine,
+		ActionDeleteLine: func() {
+			for range e.getActionCount() {
+				e.DeleteLine()
+			}
+		},
 		ActionReplace: func() {
 			e.ChangeMode(replace)
 		},
@@ -446,22 +450,22 @@ func New(km keymapper) *Editor {
 			e.MoveCursorToLine(n)
 		},
 		ActionMoveEndOfWord: func() {
-			e.MoveMotion("e", 1)
+			e.MoveMotion("e", e.getActionCount())
 		},
 		ActionMoveStartOfWord: func() {
-			e.MoveMotion("w", 1)
+			e.MoveMotion("w", e.getActionCount())
 		},
 		ActionMoveBackStartOfWord: func() {
-			e.MoveMotion("w", -1)
+			e.MoveMotion("w", -e.getActionCount())
 		},
 		ActionMoveBackEndOfWord: func() {
-			e.MoveMotion("e", -1)
+			e.MoveMotion("e", -e.getActionCount())
 		},
 		ActionMoveNextSearch: func() {
-			e.MoveMotion("n", 1)
+			e.MoveMotion("n", e.getActionCount())
 		},
 		ActionMovePrevSearch: func() {
-			e.MoveMotion("n", -1)
+			e.MoveMotion("n", -e.getActionCount())
 		},
 	}
 
@@ -1468,8 +1472,12 @@ func (e *Editor) Undo() {
 	if e.undoOffset < 0 {
 		return
 	}
-	undo := e.undoStack[e.undoOffset]
-	e.undoOffset--
+	n := e.undoOffset - e.getActionCount() + 1
+	if n < 0 {
+		n = 0
+	}
+	undo := e.undoStack[n]
+	e.undoOffset = n - 1
 	e.SetText(undo.text, undo.cursor)
 }
 
