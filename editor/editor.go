@@ -773,7 +773,11 @@ func (e *Editor) Draw(screen tcell.Screen) {
 		for i, _ := range e.spansPerLines[e.offsets[0]:lastLine] {
 			lineNumber := i + e.offsets[0] + 1
 			lineNumberText := fmt.Sprintf("%*d", lineNumberDigit, lineNumber)
-			tview.Print(screen, lineNumberText, x, textY, lineNumberWidth, tview.AlignLeft, tcell.ColorSlateGray)
+			lineNumberColor := tcell.ColorSlateGray
+			if lineNumber == e.cursor[0]+1 {
+				lineNumberColor = tcell.ColorOrange
+			}
+			tview.Print(screen, lineNumberText, x, textY, lineNumberWidth, tview.AlignLeft, lineNumberColor)
 			textY++
 		}
 		x += lineNumberWidth
@@ -793,6 +797,14 @@ func (e *Editor) Draw(screen tcell.Screen) {
 	}
 	for row, spans := range e.spansPerLines[e.offsets[0]:lastLine] {
 		row += e.offsets[0]
+
+		// highlight current cursor line
+		if !e.oneLineMode && row == e.cursor[0] {
+			for i := range w {
+				screen.SetContent(x+i, textY, ' ', nil, tcell.StyleDefault.Background(tcell.ColorGray).Foreground(tcell.ColorWhite))
+			}
+		}
+
 		for col, span := range spans {
 			// skip drawing end line sentinel
 			if span.runes == nil {
@@ -828,6 +840,9 @@ func (e *Editor) Draw(screen tcell.Screen) {
 			if runes[0] != '\t' {
 				bg := tview.Styles.PrimitiveBackgroundColor
 				fg := tview.Styles.PrimaryTextColor
+				if !e.oneLineMode && row == e.cursor[0] {
+					bg = tcell.ColorGray
+				}
 				if hasDecoration && d.text == "" {
 					fg, bg, _ = d.style.Decompose()
 				}
