@@ -1891,7 +1891,20 @@ func (e *Editor) GetMatchingBlock(from [2]int) [2]int {
 		return from
 	}
 
-	// TODO: handle directionless match block
+	e.buildSearchIndexes(r, string(r), 0)
+	for i, index := range e.motionIndexes[r] {
+		if index[0] == from[0] && index[1] == from[1] {
+			target := i + 1
+			if (i+1)%2 == 0 {
+				target = i - 1
+			}
+			if target < 0 || target > len(e.motionIndexes[r])-1 {
+				return from
+			}
+			return [2]int{e.motionIndexes[r][target][0], e.motionIndexes[r][target][1]}
+		}
+	}
+
 	return from
 }
 
