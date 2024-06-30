@@ -891,10 +891,16 @@ func (e *Editor) Draw(screen tcell.Screen) {
 			lastLine = len(e.spansPerLines)
 		}
 		for i, _ := range e.spansPerLines[e.offsets[0]:lastLine] {
-			lineNumber := i + e.offsets[0] + 1
+			lineNumber := i + e.offsets[0] - e.cursor[0]
+			if lineNumber < 0 {
+				lineNumber *= -1
+			}
+			if e.cursor[0] == i+e.offsets[0] {
+				lineNumber = i + e.offsets[0] + 1
+			}
 			lineNumberText := fmt.Sprintf("%*d", lineNumberDigit, lineNumber)
 			lineNumberColor := tcell.ColorSlateGray
-			if lineNumber == e.cursor[0]+1 {
+			if i+e.offsets[0] == e.cursor[0] {
 				lineNumberColor = tcell.ColorOrange
 			}
 			tview.Print(screen, lineNumberText, x, textY, lineNumberWidth, tview.AlignLeft, lineNumberColor)
@@ -1068,7 +1074,7 @@ func (e *Editor) InputHandler() func(event *tcell.EventKey, setFocus func(p tvie
 			return
 		}
 
-		if action.IsMotion() && e.motionRunner[action] != nil {
+		if action.IsMotion() && (!action.IsCountlessMotion() || e.pendingCount == 0) && e.motionRunner[action] != nil {
 			m := e.motionRunner[action]()
 			if isAsyncMotion(m) {
 				e.lastMotion = action
@@ -1388,10 +1394,16 @@ func (e *Editor) MoveCursorLastLine() {
 }
 
 func (e *Editor) GetLastLineCursor() [2]int {
+	if e.pendingCount > 0 {
+		return e.GetLineCursor(e.pendingCount - 1)
+	}
 	return e.GetLineCursor(len(e.spansPerLines) - 1)
 }
 
 func (e *Editor) GetFirstLineCursor() [2]int {
+	if e.pendingCount > 0 {
+		return e.GetLineCursor(e.pendingCount - 1)
+	}
 	return e.GetLineCursor(0)
 }
 

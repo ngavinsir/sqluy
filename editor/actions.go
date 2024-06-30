@@ -57,6 +57,7 @@ var OperatorActions = []Action{ActionChange, ActionDelete, ActionYank}
 var MotionActions = []Action{ActionMoveLeft, ActionMoveRight, ActionMoveUp, ActionMoveDown, ActionMoveEndOfLine, ActionMoveStartOfLine, ActionMoveFirstNonWhitespace,
 	ActionMoveLastLine, ActionMoveFirstLine, ActionMoveEndOfWord, ActionMoveStartOfWord, ActionMoveBackStartOfWord, ActionMoveBackEndOfWord, ActionEnableSearch, ActionTil,
 	ActionTilBack, ActionFind, ActionFindBack}
+var CountlessMotionActions = []Action{ActionMoveStartOfLine}
 var WaitingForRuneActions = []Action{ActionTil, ActionTilBack, ActionFind, ActionFindBack}
 
 var actionMapper = map[Action]string{
@@ -119,6 +120,10 @@ func (a Action) IsOperator() bool {
 
 func (a Action) IsMotion() bool {
 	return slices.Contains(MotionActions, a)
+}
+
+func (a Action) IsCountlessMotion() bool {
+	return slices.Contains(CountlessMotionActions, a)
 }
 
 func (a Action) IsWaitingForRune() bool {
