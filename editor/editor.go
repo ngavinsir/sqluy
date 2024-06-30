@@ -820,11 +820,11 @@ func (e *Editor) Draw(screen tcell.Screen) {
 			if e.pendingCount > 0 {
 				pendingCountTxt = strconv.Itoa(e.pendingCount)
 			}
-			pendingActionTxt := ""
-			if e.pendingAction != ActionNone {
-				pendingActionTxt = strings.TrimPrefix(e.pendingAction.String(), "editor.") + "+"
-			}
-			_, pendingWidth = tview.Print(screen, "("+pendingActionTxt+pendingCountTxt+strings.Join(e.pending, "")+")", x+modeWidth+modeTxtWidth+1, y+h-1, w-(x+modeWidth+modeTxtWidth), tview.AlignLeft, tcell.ColorYellow)
+			// pendingActionTxt := ""
+			// if e.pendingAction != ActionNone {
+			// 	pendingActionTxt = strings.TrimPrefix(e.pendingAction.String(), "editor.") + "+"
+			// }
+			_, pendingWidth = tview.Print(screen, "("+pendingCountTxt+strings.Join(e.pending, "")+")", x+modeWidth+modeTxtWidth+1, y+h-1, w-(x+modeWidth+modeTxtWidth), tview.AlignLeft, tcell.ColorYellow)
 		}
 		posText := fmt.Sprintf("x: %d/%d y: %d/%d", e.cursor[1]+1, len(e.spansPerLines[e.cursor[0]]), e.cursor[0]+1, len(e.spansPerLines))
 		tview.Print(screen, posText, x+modeWidth+modeTxtWidth+pendingWidth+1, y+h-1, w-(x+modeWidth+modeTxtWidth+pendingWidth+1), tview.AlignRight, tcell.ColorWhite)
@@ -1011,94 +1011,26 @@ func (e *Editor) Focus(delegate func(p tview.Primitive)) {
 
 func (e *Editor) InputHandler() func(event *tcell.EventKey, setFocus func(p tview.Primitive)) {
 	return e.Box.WrapInputHandler(func(event *tcell.EventKey, setFocus func(p tview.Primitive)) {
+		// embedded search editor is not null, send input event to it
 		if e.searchEditor != nil {
 			e.searchEditor.InputHandler()(event, setFocus)
 			return
 		}
 
-		isDigit := event.Key() == tcell.KeyRune && unicode.IsDigit(event.Rune())
-
-		eventName := event.Name()
-		if event.Key() == tcell.KeyRune {
-			eventName = string(event.Rune())
-		} else {
-			eventName = strings.ToLower(eventName)
-		}
-		e.pending = append(e.pending, eventName)
-
-		group := e.mode.ShortString()
-		if e.oneLineMode {
-			group = "o" + e.mode.ShortString()
-		}
-
-		actionString, anyStartWith := e.keymapper.Get(e.pending, group)
-		action := ActionFromString(actionString)
-
-		if e.waitingForMotion && event.Key() != tcell.KeyRune {
-			e.ResetAction()
-			return
-		} else if e.waitingForMotion && e.lastMotion.IsWaitingForRune() && e.runeRunner[e.lastMotion] != nil {
-			e.runeRunner[e.lastMotion](event.Rune())
-			action = e.lastMotion
-		}
-
-		if action.IsOperator() && e.mode == visual {
-			prevMode := e.mode
-			e.operatorRunner[action](e.visualStart)
-			if e.mode == prevMode {
-				e.mode = normal
-			}
-			e.ResetAction()
-			return
-		}
-		if action.IsOperator() {
-			e.pendingAction = action
-			e.pending = nil
-			return
-		}
-
-		if action.IsMotion() && (!action.IsCountlessMotion() || e.pendingCount == 0) && e.motionRunner[action] != nil {
-			m := e.motionRunner[action]()
-			if isAsyncMotion(m) {
-				e.lastMotion = action
-				return
-			}
-
-			e.operatorRunner[e.pendingAction](m)
-			e.ResetAction()
-			return
-		}
-		if e.actionRunner[action] != nil {
-			e.actionRunner[action]()
-			if !isDigit {
-				e.ResetAction()
-				return
-			}
-		}
-		if anyStartWith && !isDigit {
-			return
-		}
-
-		if isDigit && e.mode != insert && e.mode != replace {
-			e.pendingCount = e.pendingCount*10 + int(event.Rune()-'0')
-			e.pending = e.pending[:len(e.pending)-1]
-			return
-		} else {
-			e.pending = nil
-		}
-
-		// default actions
+		// handle unkeymappable actions first, e.g. rune events on insert mode
 		switch e.mode {
 		case replace:
 			switch key := event.Key(); key {
 			case tcell.KeyEsc:
 				e.ChangeMode(normal)
+				return
 			case tcell.KeyRune:
 				text := string(event.Rune())
 				from := e.cursor
 				until := [2]int{e.cursor[0], e.cursor[1] + 1}
 				e.ReplaceText(text, from, until)
 				e.mode = normal
+				return
 			}
 
 		case insert:
@@ -1108,12 +1040,14 @@ func (e *Editor) InputHandler() func(event *tcell.EventKey, setFocus func(p tvie
 				if e.cursor[1] == len(e.spansPerLines[e.cursor[0]])-1 {
 					e.MoveCursorLeft()
 				}
+				return
 			case tcell.KeyRune:
 				text := string(event.Rune())
 				e.ReplaceText(text, e.cursor, e.cursor)
 				e.MoveCursorRight()
 				e.SaveChanges()
 				e.undoOffset--
+				return
 			case tcell.KeyEnter:
 				if e.oneLineMode && e.onDoneFunc != nil {
 					e.onDoneFunc(e.text)
@@ -1124,11 +1058,13 @@ func (e *Editor) InputHandler() func(event *tcell.EventKey, setFocus func(p tvie
 				e.cursor[1] = 0
 				e.SaveChanges()
 				e.undoOffset--
+				return
 			case tcell.KeyTab:
 				e.ReplaceText("\t", e.cursor, e.cursor)
 				e.MoveCursorRight()
 				e.SaveChanges()
 				e.undoOffset--
+				return
 			case tcell.KeyBackspace, tcell.KeyBackspace2:
 				if e.cursor[0] == 0 && e.cursor[1] == 0 {
 					return
@@ -1145,8 +1081,99 @@ func (e *Editor) InputHandler() func(event *tcell.EventKey, setFocus func(p tvie
 				e.cursor = from
 				e.SaveChanges()
 				e.undoOffset--
+				return
 			}
 		}
+
+		isDigit := event.Key() == tcell.KeyRune && unicode.IsDigit(event.Rune())
+
+		// append to pending
+		eventName := event.Name()
+		if event.Key() == tcell.KeyRune {
+			eventName = string(event.Rune())
+		} else {
+			eventName = strings.ToLower(eventName)
+		}
+		e.pending = append(e.pending, eventName)
+
+		// get group
+		group := e.mode.ShortString()
+		if e.oneLineMode {
+			group = "o" + e.mode.ShortString()
+		}
+
+		// parse action first try
+		actionString, anyStartWith := e.keymapper.Get(e.pending, group)
+		action := ActionFromString(actionString)
+		// if not found, try again without pending action in pending
+		if action == ActionNone && e.pendingAction != ActionNone && len(e.pending) > 1 {
+			e.pending = e.pending[1:]
+			actionString, anyStartWith = e.keymapper.Get(e.pending, group)
+			action = ActionFromString(actionString)
+		}
+
+		// if waitingForMotion is true but the event is not a rune event, reset the action state
+		if e.waitingForMotion && event.Key() != tcell.KeyRune {
+			e.ResetAction()
+			return
+
+			// if waitingForMotion is true and the last motion is waiting for a rune and a rune runner exist for it
+		} else if e.waitingForMotion && e.lastMotion.IsWaitingForRune() && e.runeRunner[e.lastMotion] != nil {
+			e.runeRunner[e.lastMotion](event.Rune())
+			action = e.lastMotion
+		}
+
+		// handle operators actions
+		// no need to wait for motion action in visual mode
+		if action.IsOperator() && e.mode == visual {
+			prevMode := e.mode
+			e.operatorRunner[action](e.visualStart)
+			if e.mode == prevMode {
+				e.mode = normal
+			}
+			e.ResetAction()
+			return
+		}
+		// save operator action in pendingAction, wait for the next motion action
+		if action.IsOperator() {
+			e.pendingAction = action
+			return
+		}
+
+		// handle motion actions
+		// ignore countless motion (e.g. start of line motion) if pending count is not zero
+		if action.IsMotion() && (!action.IsCountlessMotion() || e.pendingCount == 0) && e.motionRunner[action] != nil {
+			m := e.motionRunner[action]()
+			if isAsyncMotion(m) {
+				e.lastMotion = action
+				return
+			}
+
+			e.operatorRunner[e.pendingAction](m)
+			e.ResetAction()
+			return
+		}
+
+		// handle the other action
+		if e.actionRunner[action] != nil {
+			e.actionRunner[action]()
+			e.ResetAction()
+			return
+		}
+
+		// if there's a keymap that starts with runes in pending, don't reset pending
+		if anyStartWith {
+			return
+		}
+
+		// if it's a digit rune event, save it in pending count
+		if isDigit {
+			e.pendingCount = e.pendingCount*10 + int(event.Rune()-'0')
+			e.pending = e.pending[:len(e.pending)-1]
+			return
+		}
+
+		e.ResetAction()
 	})
 }
 
@@ -1541,7 +1568,7 @@ func (e *Editor) GetText(from, until [2]int) string {
 			if i == 0 && j < from[1] {
 				continue
 			}
-			if i == len(lines)-1 && j >= until[1] {
+			if i == len(lines)-1 && j > until[1] {
 				continue
 			}
 
