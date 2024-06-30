@@ -541,36 +541,7 @@ func New(km keymapper) *Editor {
 	}
 
 	e.decorators = []decorator{
-		// search highlighter
-		func(row, col int) (decoration, bool) {
-			if e.motionIndexes['n'] == nil && e.motionIndexes['t'] == nil && e.motionIndexes['T'] == nil && e.motionIndexes['f'] == nil {
-				return decoration{}, false
-			}
-
-			indexes := e.motionIndexes['t']
-			if indexes == nil {
-				indexes = e.motionIndexes['T']
-			}
-			if indexes == nil {
-				indexes = e.motionIndexes['f']
-			}
-			if indexes == nil {
-				indexes = e.motionIndexes['n']
-			}
-
-			style := tcell.StyleDefault.Background(tview.Styles.MoreContrastBackgroundColor).Foreground(tview.Styles.PrimitiveBackgroundColor)
-			for _, idx := range indexes {
-				if idx[0] != row {
-					continue
-				}
-
-				if col >= idx[1] && col <= idx[2] {
-					return decoration{style: style, text: ""}, true
-				}
-			}
-
-			return decoration{}, false
-		},
+		e.searchDecorator,
 	}
 
 	return e
@@ -1918,6 +1889,36 @@ func (e *Editor) GetMatchingBlock(from [2]int) [2]int {
 	}
 
 	return from
+}
+
+func (e *Editor) searchDecorator(row, col int) (decoration, bool) {
+	if e.motionIndexes['n'] == nil && e.motionIndexes['t'] == nil && e.motionIndexes['T'] == nil && e.motionIndexes['f'] == nil {
+		return decoration{}, false
+	}
+
+	indexes := e.motionIndexes['t']
+	if indexes == nil {
+		indexes = e.motionIndexes['T']
+	}
+	if indexes == nil {
+		indexes = e.motionIndexes['f']
+	}
+	if indexes == nil {
+		indexes = e.motionIndexes['n']
+	}
+
+	style := tcell.StyleDefault.Background(tview.Styles.MoreContrastBackgroundColor).Foreground(tview.Styles.PrimitiveBackgroundColor)
+	for _, idx := range indexes {
+		if idx[0] != row {
+			continue
+		}
+
+		if col >= idx[1] && col <= idx[2] {
+			return decoration{style: style, text: ""}, true
+		}
+	}
+
+	return decoration{}, false
 }
 
 func WriteFile(text string) {
