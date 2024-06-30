@@ -42,6 +42,7 @@ const (
 	ActionMovePrevSearch
 	ActionMoveNextFind
 	ActionMovePrevFind
+	ActionMoveMatchBlock
 	ActionTil
 	ActionTilBack
 	ActionFind
@@ -92,6 +93,7 @@ var actionMapper = map[Action]string{
 	ActionMovePrevSearch:         "move_prev_search",
 	ActionMoveNextFind:           "move_next_find",
 	ActionMovePrevFind:           "move_prev_find",
+	ActionMoveMatchBlock:         "move_match_block",
 	ActionTil:                    "til",
 	ActionTilBack:                "til_back",
 	ActionFind:                   "find",

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -74,6 +75,28 @@ type (
 
 var (
 	asyncMotion = [2]int{-23, -57}
+
+	matchBlocks              = []rune{'{', '}', '[', ']', '(', ')', '"', '\'', '`'}
+	directionlessMatchBlocks = []rune{'"', '`', '\''}
+	matchBlockDirection      = map[rune]int{
+		'{': 1,
+		'}': -1,
+		'[': 1,
+		']': -1,
+		'(': 1,
+		')': -1,
+	}
+	matchingBlock = map[rune]rune{
+		'{':  '}',
+		'}':  '{',
+		'[':  ']',
+		']':  '[',
+		'(':  ')',
+		')':  '(',
+		'"':  '"',
+		'\'': '\'',
+		'`':  '`',
+	}
 
 	rgFirstNonWhitespace = regexp.MustCompile(`\S`)
 )
@@ -447,6 +470,9 @@ func New(km keymapper) *Editor {
 			for range e.getActionCount() {
 				e.DeleteLine()
 			}
+		},
+		ActionMoveMatchBlock: func() {
+			e.MoveCursorTo(e.GetMatchingBlock(e.cursor))
 		},
 		ActionReplace: func() {
 			e.ChangeMode(replace)
@@ -1805,6 +1831,68 @@ func (e *Editor) GetFindBackCursor() [2]int {
 
 	c := e.GetPrevMotionCursor('f', e.getActionCount())
 	return c
+}
+
+func (e *Editor) GetMatchingBlock(from [2]int) [2]int {
+	if from[0] < 0 || from[0] > len(e.spansPerLines)-1 {
+		return from
+	}
+
+	if from[1] < 0 || from[1] > len(e.spansPerLines[from[0]])-1 {
+		return from
+	}
+
+	if e.spansPerLines[from[0]][from[1]].runes == nil {
+		return from
+	}
+	r := e.spansPerLines[from[0]][from[1]].runes[0]
+	if !slices.Contains(matchBlocks, r) {
+		return from
+	}
+
+	if !slices.Contains(directionlessMatchBlocks, r) {
+		direction := matchBlockDirection[r]
+		n := 1
+		spansPerLines := e.spansPerLines[from[0]:]
+		if direction < 0 {
+			spansPerLines = e.spansPerLines[:from[0]+1]
+		}
+		for i := range spansPerLines {
+			first := i == 0
+			if direction < 0 {
+				i = len(spansPerLines) - 1 - i
+			}
+			for j := range spansPerLines[i] {
+				if direction < 0 {
+					j = len(spansPerLines[i]) - 1 - j
+				}
+				span := spansPerLines[i][j]
+				if first && ((direction > 0 && j <= from[1]) || (direction < 0 && j >= from[1])) {
+					continue
+				}
+
+				if span.runes != nil && span.runes[0] == r {
+					n++
+				}
+
+				if span.runes != nil && span.runes[0] == matchingBlock[r] {
+					n--
+				}
+
+				if n == 0 {
+					if direction < 0 {
+						i -= len(spansPerLines) - 1
+						i *= -1
+					}
+					return [2]int{from[0] + (i * direction), j}
+				}
+			}
+		}
+		return from
+	}
+
+	// TODO: handle directionless match block
+	return from
 }
 
 func WriteFile(text string) {

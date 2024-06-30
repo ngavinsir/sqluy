@@ -346,6 +346,16 @@
     },
     {
       "keys": [
+        "%"
+      ],
+      "groups": [
+        "n",
+        "on"
+      ],
+      "action": "editor.move_match_block"
+    },
+    {
+      "keys": [
         "a"
       ],
       "groups": [
