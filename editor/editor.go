@@ -1679,6 +1679,14 @@ func (e *Editor) DeleteUntil(until [2]int) {
 	e.ReplaceText("", from, until)
 }
 
+func (e *Editor) YankUntil(until [2]int) {
+	from := e.cursor
+	if until[0] < from[0] || (until[0] == from[0] && until[1] < from[1]) {
+		from, until = until, from
+	}
+	e.ReplaceText("", from, until)
+}
+
 func (e *Editor) ChangeUntilEndOfLine() {
 	e.ChangeUntil(e.GetEndOfLineCursor())
 }
