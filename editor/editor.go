@@ -46,6 +46,7 @@ type (
 		screen        tcell.Screen
 		viewModalFunc func(string)
 		onDoneFunc    func(string)
+		delayDrawFunc func(time.Time)
 		onExitFunc    func()
 		*tview.Box
 		searchEditor     *Editor
@@ -71,6 +72,7 @@ type (
 		mode             mode
 		oneLineMode      bool
 		waitingForMotion bool
+		yankOnVisual     bool // for yank indicator utilizng visual mode
 	}
 )
 
@@ -563,6 +565,11 @@ func (e *Editor) SetViewModalFunc(f func(string)) *Editor {
 	return e
 }
 
+func (e *Editor) SetDelayDrawFunc(f func(time.Time)) *Editor {
+	e.delayDrawFunc = f
+	return e
+}
+
 func (e *Editor) SetText(text string, cursor [2]int) *Editor {
 	e.editCount++
 	clear(e.spansPerLines)
@@ -820,10 +827,6 @@ func (e *Editor) Draw(screen tcell.Screen) {
 			if e.pendingCount > 0 {
 				pendingCountTxt = strconv.Itoa(e.pendingCount)
 			}
-			// pendingActionTxt := ""
-			// if e.pendingAction != ActionNone {
-			// 	pendingActionTxt = strings.TrimPrefix(e.pendingAction.String(), "editor.") + "+"
-			// }
 			_, pendingWidth = tview.Print(screen, "("+pendingCountTxt+strings.Join(e.pending, "")+")", x+modeWidth+modeTxtWidth+1, y+h-1, w-(x+modeWidth+modeTxtWidth), tview.AlignLeft, tcell.ColorYellow)
 		}
 		posText := fmt.Sprintf("x: %d/%d y: %d/%d", e.cursor[1]+1, len(e.spansPerLines[e.cursor[0]]), e.cursor[0]+1, len(e.spansPerLines))
@@ -1015,6 +1018,11 @@ func (e *Editor) InputHandler() func(event *tcell.EventKey, setFocus func(p tvie
 		if e.searchEditor != nil {
 			e.searchEditor.InputHandler()(event, setFocus)
 			return
+		}
+
+		// if yankOnVisual is true and mode is still visual, yank the texts in visual, then can continue to process the event
+		if e.yankOnVisual {
+			e.YankUntil(e.cursor)
 		}
 
 		// handle unkeymappable actions first, e.g. rune events on insert mode
@@ -1632,6 +1640,7 @@ func (e *Editor) EnableSearch() [2]int {
 	se := New(e.keymapper).SetOneLineMode(true)
 	se.SetText("", [2]int{0, 0})
 	se.SetRect(x, y+h-1, w, 1)
+	se.SetDelayDrawFunc(e.delayDrawFunc)
 	se.mode = insert
 	se.onDoneFunc = func(s string) {
 		e.buildSearchIndexes('n', regexp.QuoteMeta(s), 0)
@@ -1728,12 +1737,28 @@ func (e *Editor) DeleteUntil(until [2]int) {
 }
 
 func (e *Editor) YankUntil(until [2]int) {
-	from := e.cursor
-	if until[0] < from[0] || (until[0] == from[0] && until[1] < from[1]) {
-		from, until = until, from
+	if e.yankOnVisual {
+		e.yankOnVisual = false
+		if e.mode != visual {
+			return
+		}
+
+		e.mode = normal
+		until := e.cursor
+		from := e.visualStart
+		if until[0] < from[0] || (until[0] == from[0] && until[1] < from[1]) {
+			from, until = until, from
+		}
+		clipboard.Write(e.GetText(from, until))
+		e.ResetMotionIndexes()
+		return
 	}
-	clipboard.Write(e.GetText(from, until))
-	e.ResetMotionIndexes()
+
+	e.VisualUntil(until)
+	e.yankOnVisual = true
+	if e.delayDrawFunc != nil {
+		e.delayDrawFunc(time.Now().Add(100 * time.Millisecond))
+	}
 }
 
 func (e *Editor) VisualUntil(until [2]int) {
@@ -1819,7 +1844,7 @@ func (e *Editor) MoveMotion(motion rune, n int) {
 
 func (e *Editor) GetEndOfWordCursor() [2]int {
 	c := e.GetNextMotionCursor('e', e.getActionCount())
-	if e.pendingAction != ActionNone {
+	if e.pendingAction != ActionNone && e.pendingAction != ActionVisual && e.pendingAction != ActionYank {
 		c[1]++
 	}
 	return c
@@ -1847,7 +1872,7 @@ func (e *Editor) GetTilCursor() [2]int {
 	}
 
 	c := e.GetNextMotionCursor('t', e.getActionCount())
-	if e.pendingAction != ActionNone && c != e.cursor {
+	if e.pendingAction != ActionNone && c != e.cursor && e.pendingAction != ActionVisual && e.pendingAction != ActionYank {
 		c[1]++
 	}
 	return c
@@ -1859,7 +1884,7 @@ func (e *Editor) GetTilBackCursor() [2]int {
 	}
 
 	c := e.GetPrevMotionCursor('T', e.getActionCount())
-	if e.pendingAction != ActionNone && c != e.cursor {
+	if e.pendingAction != ActionNone && c != e.cursor && e.pendingAction != ActionVisual && e.pendingAction != ActionYank {
 		c[1]++
 	}
 	return c
@@ -1871,7 +1896,7 @@ func (e *Editor) GetFindCursor() [2]int {
 	}
 
 	c := e.GetNextMotionCursor('f', e.getActionCount())
-	if e.pendingAction != ActionNone && c != e.cursor {
+	if e.pendingAction != ActionNone && c != e.cursor && e.pendingAction != ActionVisual && e.pendingAction != ActionYank {
 		c[1]++
 	}
 	return c
