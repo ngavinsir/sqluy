@@ -13,6 +13,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/gdamore/tcell/v2"
+	"github.com/ngavinsir/sqluy/clipboard"
 	"github.com/rivo/tview"
 	"github.com/rivo/uniseg"
 )
@@ -443,10 +444,8 @@ func New(km keymapper) *Editor {
 	    `, [2]int{3, 8})
 
 	e.onExitFunc = func() {
-		e.motionIndexes['n'] = nil
-		e.motionIndexes['t'] = nil
-		e.motionIndexes['T'] = nil
-		e.motionIndexes['f'] = nil
+		e.mode = normal
+		e.ResetMotionIndexes()
 	}
 
 	e.actionRunner = map[Action]func(){
@@ -532,6 +531,8 @@ func New(km keymapper) *Editor {
 		ActionNone:   e.MoveCursorTo,
 		ActionChange: e.ChangeUntil,
 		ActionDelete: e.DeleteUntil,
+		ActionYank:   e.YankUntil,
+		ActionVisual: e.VisualUntil,
 	}
 
 	e.runeRunner = map[Action]func(r rune){
@@ -542,6 +543,7 @@ func New(km keymapper) *Editor {
 	}
 
 	e.decorators = []decorator{
+		e.visualDecorator,
 		e.searchDecorator,
 	}
 
@@ -813,12 +815,16 @@ func (e *Editor) Draw(screen tcell.Screen) {
 		_, modeWidth := tview.Print(screen, e.mode.String(), x, y+h-1, w, tview.AlignLeft, modeColor)
 		_, modeTxtWidth := tview.Print(screen, " mode", x+modeWidth, y+h-1, w-modeWidth, tview.AlignLeft, tcell.ColorWhite)
 		pendingWidth := 0
-		if len(e.pending) > 0 || e.pendingCount > 0 {
+		if len(e.pending) > 0 || e.pendingCount > 0 || e.pendingAction != ActionNone {
 			pendingCountTxt := ""
 			if e.pendingCount > 0 {
 				pendingCountTxt = strconv.Itoa(e.pendingCount)
 			}
-			_, pendingWidth = tview.Print(screen, "("+pendingCountTxt+strings.Join(e.pending, "")+")", x+modeWidth+modeTxtWidth+1, y+h-1, w-(x+modeWidth+modeTxtWidth), tview.AlignLeft, tcell.ColorYellow)
+			pendingActionTxt := ""
+			if e.pendingAction != ActionNone {
+				pendingActionTxt = strings.TrimPrefix(e.pendingAction.String(), "editor.") + "+"
+			}
+			_, pendingWidth = tview.Print(screen, "("+pendingActionTxt+pendingCountTxt+strings.Join(e.pending, "")+")", x+modeWidth+modeTxtWidth+1, y+h-1, w-(x+modeWidth+modeTxtWidth), tview.AlignLeft, tcell.ColorYellow)
 		}
 		posText := fmt.Sprintf("x: %d/%d y: %d/%d", e.cursor[1]+1, len(e.spansPerLines[e.cursor[0]]), e.cursor[0]+1, len(e.spansPerLines))
 		tview.Print(screen, posText, x+modeWidth+modeTxtWidth+pendingWidth+1, y+h-1, w-(x+modeWidth+modeTxtWidth+pendingWidth+1), tview.AlignRight, tcell.ColorWhite)
@@ -1029,17 +1035,22 @@ func (e *Editor) InputHandler() func(event *tcell.EventKey, setFocus func(p tvie
 		action := ActionFromString(actionString)
 
 		if e.waitingForMotion && event.Key() != tcell.KeyRune {
-			e.pendingAction = ActionNone
-			e.lastMotion = ActionNone
-			e.pending = nil
-			e.pendingCount = 0
-			e.waitingForMotion = false
+			e.ResetAction()
 			return
 		} else if e.waitingForMotion && e.lastMotion.IsWaitingForRune() && e.runeRunner[e.lastMotion] != nil {
 			e.runeRunner[e.lastMotion](event.Rune())
 			action = e.lastMotion
 		}
 
+		if action.IsOperator() && e.mode == visual {
+			prevMode := e.mode
+			e.operatorRunner[action](e.visualStart)
+			if e.mode == prevMode {
+				e.mode = normal
+			}
+			e.ResetAction()
+			return
+		}
 		if action.IsOperator() {
 			e.pendingAction = action
 			e.pending = nil
@@ -1054,21 +1065,13 @@ func (e *Editor) InputHandler() func(event *tcell.EventKey, setFocus func(p tvie
 			}
 
 			e.operatorRunner[e.pendingAction](m)
-			e.pendingAction = ActionNone
-			e.lastMotion = ActionNone
-			e.pending = nil
-			e.pendingCount = 0
-			e.waitingForMotion = false
+			e.ResetAction()
 			return
 		}
 		if e.actionRunner[action] != nil {
 			e.actionRunner[action]()
 			if !isDigit {
-				e.pendingAction = ActionNone
-				e.lastMotion = ActionNone
-				e.pending = nil
-				e.pendingCount = 0
-				e.waitingForMotion = false
+				e.ResetAction()
 				return
 			}
 		}
@@ -1526,6 +1529,32 @@ func (e *Editor) ReplaceText(s string, from, until [2]int) {
 	e.SetText(b.String(), from)
 }
 
+func (e *Editor) GetText(from, until [2]int) string {
+	if from[0] > until[0] || from[0] == until[0] && from[1] > until[1] {
+		from, until = until, from
+	}
+
+	var b strings.Builder
+	lines := e.spansPerLines[from[0] : until[0]+1]
+	for i, spans := range lines {
+		for j, span := range spans {
+			if i == 0 && j < from[1] {
+				continue
+			}
+			if i == len(lines)-1 && j >= until[1] {
+				continue
+			}
+
+			b.WriteString(string(span.runes))
+		}
+		if i < len(lines)-1 {
+			b.WriteString("\n")
+		}
+	}
+
+	return b.String()
+}
+
 func (e *Editor) SaveChanges() {
 	maxUndoOffset := e.undoOffset + 1
 	if maxUndoOffset > len(e.undoStack) {
@@ -1581,19 +1610,11 @@ func (e *Editor) EnableSearch() [2]int {
 		e.buildSearchIndexes('n', regexp.QuoteMeta(s), 0)
 		e.operatorRunner[e.pendingAction](e.GetSearchCursor())
 		e.searchEditor = nil
-		e.waitingForMotion = false
-		e.pendingAction = ActionNone
-		e.lastMotion = ActionNone
-		e.pending = nil
-		e.pendingCount = 0
+		e.ResetAction()
 	}
 	se.onExitFunc = func() {
 		e.searchEditor = nil
-		e.waitingForMotion = false
-		e.pendingAction = ActionNone
-		e.lastMotion = ActionNone
-		e.pending = nil
-		e.pendingCount = 0
+		e.ResetAction()
 	}
 	e.searchEditor = se
 	e.waitingForMotion = true
@@ -1684,7 +1705,19 @@ func (e *Editor) YankUntil(until [2]int) {
 	if until[0] < from[0] || (until[0] == from[0] && until[1] < from[1]) {
 		from, until = until, from
 	}
-	e.ReplaceText("", from, until)
+	clipboard.Write(e.GetText(from, until))
+	e.ResetMotionIndexes()
+}
+
+func (e *Editor) VisualUntil(until [2]int) {
+	if e.mode == visual {
+		e.mode = normal
+		return
+	}
+
+	e.visualStart = e.cursor
+	e.MoveCursorTo(until)
+	e.ChangeMode(visual)
 }
 
 func (e *Editor) ChangeUntilEndOfLine() {
@@ -1929,6 +1962,42 @@ func (e *Editor) searchDecorator(row, col int) (decoration, bool) {
 	}
 
 	return decoration{}, false
+}
+
+func (e *Editor) visualDecorator(row, col int) (decoration, bool) {
+	if e.mode != visual {
+		return decoration{}, false
+	}
+
+	from := e.visualStart
+	until := e.cursor
+	if from[0] > until[0] || from[0] == until[0] && from[1] > until[1] {
+		from, until = until, from
+	}
+
+	style := tcell.StyleDefault.Background(tview.Styles.MoreContrastBackgroundColor).Foreground(tview.Styles.PrimitiveBackgroundColor)
+	if (row == from[0] && col >= from[1] && row == until[0] && col <= until[1]) ||
+		(row == from[0] && row < until[0] && col >= from[1]) ||
+		(row > from[0] && row < until[0]) || (row == until[0] && row > from[0] && col <= until[1]) {
+		return decoration{style: style, text: ""}, true
+	}
+
+	return decoration{}, false
+}
+
+func (e *Editor) ResetMotionIndexes() {
+	e.motionIndexes['n'] = nil
+	e.motionIndexes['t'] = nil
+	e.motionIndexes['T'] = nil
+	e.motionIndexes['f'] = nil
+}
+
+func (e *Editor) ResetAction() {
+	e.pendingAction = ActionNone
+	e.lastMotion = ActionNone
+	e.pending = nil
+	e.pendingCount = 0
+	e.waitingForMotion = false
 }
 
 func WriteFile(text string) {

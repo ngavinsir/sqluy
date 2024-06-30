@@ -6,11 +6,15 @@ import (
 )
 
 type (
+	keys struct {
+		Keys [][]string
+	}
+
 	keymapJSON struct {
 		Keymaps []struct {
-			Keys   []string `json:"keys"`
-			Groups []string `json:"groups"`
-			Action string   `json:"action"`
+			Action          string   `json:"action"`
+			AllPossibleKeys keys     `json:"keys"`
+			Groups          []string `json:"groups"`
 		} `json:"keymaps"`
 	}
 
@@ -78,7 +82,9 @@ func keyTreePerGroupFromJSONString(s string) map[string]*keyTree {
 			if m[group] == nil {
 				m[group] = &keyTree{}
 			}
-			m[group].Add(keymap.Keys, keymap.Action)
+			for _, k := range keymap.AllPossibleKeys.Keys {
+				m[group].Add(k, keymap.Action)
+			}
 		}
 	}
 	return m
@@ -89,4 +95,15 @@ func (k Keymapper) Get(keys []string, group string) (string, bool) {
 		return "", false
 	}
 	return k.keyTreePerGroup[group].Get(keys)
+}
+
+func (k *keys) UnmarshalJSON(data []byte) error {
+	var stringArray []string
+	err := json.Unmarshal(data, &stringArray)
+	if err == nil {
+		k.Keys = [][]string{stringArray}
+		return nil
+	}
+
+	return json.Unmarshal(data, &k.Keys)
 }

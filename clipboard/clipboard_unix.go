@@ -102,7 +102,7 @@ func getCopyCommand() *exec.Cmd {
 	return exec.Command(copyCmdArgs[0], copyCmdArgs[1:]...)
 }
 
-func readAll() (string, error) {
+func read() (string, error) {
 	setCmdArgs()
 	if pasteCmdArgs == nil {
 		return "", errUnsupported
@@ -119,7 +119,7 @@ func readAll() (string, error) {
 	return result, nil
 }
 
-func writeAll(text string) error {
+func write(text string) error {
 	setCmdArgs()
 	if copyCmdArgs == nil {
 		return errUnsupported

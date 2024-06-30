@@ -43,6 +43,8 @@ const (
 	ActionMoveNextFind
 	ActionMovePrevFind
 	ActionMoveMatchBlock
+	ActionSwitchVisualStart
+	ActionVisual
 	ActionTil
 	ActionTilBack
 	ActionFind
@@ -53,7 +55,7 @@ const (
 	ActionYank
 )
 
-var OperatorActions = []Action{ActionChange, ActionDelete, ActionYank}
+var OperatorActions = []Action{ActionChange, ActionDelete, ActionYank, ActionVisual}
 var MotionActions = []Action{ActionMoveLeft, ActionMoveRight, ActionMoveUp, ActionMoveDown, ActionMoveEndOfLine, ActionMoveStartOfLine, ActionMoveFirstNonWhitespace,
 	ActionMoveLastLine, ActionMoveFirstLine, ActionMoveEndOfWord, ActionMoveStartOfWord, ActionMoveBackStartOfWord, ActionMoveBackEndOfWord, ActionEnableSearch, ActionTil,
 	ActionTilBack, ActionFind, ActionFindBack}
@@ -95,6 +97,8 @@ var actionMapper = map[Action]string{
 	ActionMoveNextFind:           "move_next_find",
 	ActionMovePrevFind:           "move_prev_find",
 	ActionMoveMatchBlock:         "move_match_block",
+	ActionSwitchVisualStart:      "switch_visual_start",
+	ActionVisual:                 "visual",
 	ActionTil:                    "til",
 	ActionTilBack:                "til_back",
 	ActionFind:                   "find",
