@@ -51,7 +51,7 @@ type (
 		operatorRunner   map[Action]func(target [2]int)
 		motionRunner     map[Action]func() [2]int
 		runeRunner       map[Action]func(r rune)
-		motionIndexes    map[string][][3]int
+		motionIndexes    map[rune][][3]int
 		text             string
 		spansPerLines    [][]span
 		pending          []string
@@ -65,7 +65,7 @@ type (
 		editCount        uint64
 		undoOffset       int
 		pendingAction    Action
-		pendingMotion    Action
+		lastMotion       Action
 		mode             mode
 		oneLineMode      bool
 		waitingForMotion bool
@@ -420,7 +420,10 @@ func New(km keymapper) *Editor {
 	    `, [2]int{3, 8})
 
 	e.onExitFunc = func() {
-		e.motionIndexes["n"] = nil
+		e.motionIndexes['n'] = nil
+		e.motionIndexes['t'] = nil
+		e.motionIndexes['T'] = nil
+		e.motionIndexes['f'] = nil
 	}
 
 	e.actionRunner = map[Action]func(){
@@ -449,10 +452,32 @@ func New(km keymapper) *Editor {
 			e.ChangeMode(replace)
 		},
 		ActionMoveNextSearch: func() {
-			e.MoveMotion("n", e.getActionCount())
+			e.MoveMotion('n', e.getActionCount())
 		},
 		ActionMovePrevSearch: func() {
-			e.MoveMotion("n", -e.getActionCount())
+			e.MoveMotion('n', -e.getActionCount())
+		},
+		ActionMoveNextFind: func() {
+			if e.motionIndexes['f'] != nil && !strings.Contains(e.lastMotion.String(), "back") {
+				e.MoveMotion('f', e.getActionCount())
+			} else if e.motionIndexes['f'] != nil {
+				e.MoveMotion('f', -e.getActionCount())
+			} else if e.motionIndexes['t'] != nil {
+				e.MoveMotion('t', e.getActionCount())
+			} else if e.motionIndexes['T'] != nil {
+				e.MoveMotion('T', -e.getActionCount())
+			}
+		},
+		ActionMovePrevFind: func() {
+			if e.motionIndexes['f'] != nil && !strings.Contains(e.lastMotion.String(), "back") {
+				e.MoveMotion('f', -e.getActionCount())
+			} else if e.motionIndexes['f'] != nil {
+				e.MoveMotion('f', e.getActionCount())
+			} else if e.motionIndexes['t'] != nil {
+				e.MoveMotion('t', -e.getActionCount())
+			} else if e.motionIndexes['T'] != nil {
+				e.MoveMotion('T', e.getActionCount())
+			}
 		},
 	}
 
@@ -472,6 +497,9 @@ func New(km keymapper) *Editor {
 		ActionMoveBackStartOfWord:    e.GetBackStartOfWordCursor,
 		ActionEnableSearch:           e.EnableSearch,
 		ActionTil:                    e.GetTilCursor,
+		ActionTilBack:                e.GetTilBackCursor,
+		ActionFind:                   e.GetFindCursor,
+		ActionFindBack:               e.GetFindBackCursor,
 	}
 
 	e.operatorRunner = map[Action]func(target [2]int){
@@ -480,18 +508,32 @@ func New(km keymapper) *Editor {
 	}
 
 	e.runeRunner = map[Action]func(r rune){
-		ActionTil: e.AcceptRuneTil,
+		ActionTil:      e.AcceptRuneTil,
+		ActionTilBack:  e.AcceptRuneTilBack,
+		ActionFind:     e.AcceptRuneFind,
+		ActionFindBack: e.AcceptRuneFind,
 	}
 
 	e.decorators = []decorator{
 		// search highlighter
 		func(row, col int) (decoration, bool) {
-			if e.motionIndexes["n"] == nil {
+			if e.motionIndexes['n'] == nil && e.motionIndexes['t'] == nil && e.motionIndexes['T'] == nil && e.motionIndexes['f'] == nil {
 				return decoration{}, false
 			}
 
+			indexes := e.motionIndexes['t']
+			if indexes == nil {
+				indexes = e.motionIndexes['T']
+			}
+			if indexes == nil {
+				indexes = e.motionIndexes['f']
+			}
+			if indexes == nil {
+				indexes = e.motionIndexes['n']
+			}
+
 			style := tcell.StyleDefault.Background(tview.Styles.MoreContrastBackgroundColor).Foreground(tview.Styles.PrimitiveBackgroundColor)
-			for _, idx := range e.motionIndexes["n"] {
+			for _, idx := range indexes {
 				if idx[0] != row {
 					continue
 				}
@@ -562,14 +604,20 @@ func (e *Editor) SetText(text string, cursor [2]int) *Editor {
 
 	e.MoveCursorToLine(cursor[0])
 
-	e.motionIndexes = make(map[string][][3]int)
+	e.motionIndexes = make(map[rune][][3]int)
 	go e.buildMotionwIndexes(e.editCount)
 	go e.buildMotioneIndexes(e.editCount)
 
 	return e
 }
 
-func (e *Editor) buildSearchIndexes(query string, prev bool) bool {
+func (e *Editor) buildSearchIndexes(group rune, query string, offset int) bool {
+	if offset < 0 {
+		query = "[^" + query + "]" + query
+	} else if offset > 0 {
+		query += "[^" + query + "]"
+	}
+
 	foundMatches := false
 	rg := regexp.MustCompile(query)
 
@@ -600,20 +648,11 @@ func (e *Editor) buildSearchIndexes(query string, prev bool) bool {
 			}
 
 			foundMatches = true
-			if prev && m[0] > 0 {
-				indexes = append(indexes, [3]int{i, mapper[m[0]-1], mapper[m[1]-1]})
-			} else {
-				indexes = append(indexes, [3]int{i, mapper[m[0]], mapper[m[1]-1]})
-			}
+			indexes = append(indexes, [3]int{i, mapper[m[0]], mapper[m[1]-1]})
 		}
 	}
 
-	if prev {
-		e.motionIndexes["t"] = indexes
-		// panic(fmt.Sprintf("%+v", indexes))
-	} else {
-		e.motionIndexes["n"] = indexes
-	}
+	e.motionIndexes[group] = indexes
 	return foundMatches
 }
 
@@ -676,7 +715,7 @@ func (e *Editor) buildMotionwIndexes(editCount uint64) {
 	if e.editCount > editCount {
 		return
 	}
-	e.motionIndexes["w"] = indexes
+	e.motionIndexes['w'] = indexes
 }
 
 func (e *Editor) buildMotioneIndexes(editCount uint64) {
@@ -738,7 +777,7 @@ func (e *Editor) buildMotioneIndexes(editCount uint64) {
 	if e.editCount > editCount {
 		return
 	}
-	e.motionIndexes["e"] = indexes
+	e.motionIndexes['e'] = indexes
 	// panic(fmt.Sprintf("%+v", indexes[:40]))
 }
 
@@ -891,7 +930,21 @@ func (e *Editor) Draw(screen tcell.Screen) {
 			}
 
 			d, hasDecoration := e.getDecoration(row, col)
+			// print decoration bg
+			if hasDecoration {
+				_, bg, _ := d.style.Decompose()
+				for i := range span.width {
+					screen.SetContent(
+						textX-e.offsets[1]+i,
+						textY,
+						' ',
+						nil,
+						tcell.StyleDefault.Background(bg),
+					)
+				}
+			}
 
+			// print original text
 			if runes[0] != '\t' {
 				bg := tview.Styles.PrimitiveBackgroundColor
 				fg := tview.Styles.PrimaryTextColor
@@ -973,13 +1026,14 @@ func (e *Editor) InputHandler() func(event *tcell.EventKey, setFocus func(p tvie
 
 		if e.waitingForMotion && event.Key() != tcell.KeyRune {
 			e.pendingAction = ActionNone
-			e.pendingMotion = ActionNone
+			e.lastMotion = ActionNone
 			e.pending = nil
 			e.pendingCount = 0
+			e.waitingForMotion = false
 			return
-		} else if e.waitingForMotion && e.pendingMotion.IsWaitingForRune() && e.runeRunner[e.pendingMotion] != nil {
-			e.runeRunner[e.pendingMotion](event.Rune())
-			action = e.pendingMotion
+		} else if e.waitingForMotion && e.lastMotion.IsWaitingForRune() && e.runeRunner[e.lastMotion] != nil {
+			e.runeRunner[e.lastMotion](event.Rune())
+			action = e.lastMotion
 		}
 
 		if action.IsOperator() {
@@ -991,13 +1045,13 @@ func (e *Editor) InputHandler() func(event *tcell.EventKey, setFocus func(p tvie
 		if action.IsMotion() && e.motionRunner[action] != nil {
 			m := e.motionRunner[action]()
 			if isAsyncMotion(m) {
-				e.pendingMotion = action
+				e.lastMotion = action
 				return
 			}
 
 			e.operatorRunner[e.pendingAction](m)
 			e.pendingAction = ActionNone
-			e.pendingMotion = ActionNone
+			e.lastMotion = ActionNone
 			e.pending = nil
 			e.pendingCount = 0
 			e.waitingForMotion = false
@@ -1007,7 +1061,7 @@ func (e *Editor) InputHandler() func(event *tcell.EventKey, setFocus func(p tvie
 			e.actionRunner[action]()
 			if !isDigit {
 				e.pendingAction = ActionNone
-				e.pendingMotion = ActionNone
+				e.lastMotion = ActionNone
 				e.pending = nil
 				e.pendingCount = 0
 				e.waitingForMotion = false
@@ -1102,7 +1156,7 @@ func (e *Editor) MoveCursorTo(to [2]int) {
 	e.MoveCursorToLine(e.cursor[0])
 }
 
-func (e *Editor) GetNextMotionCursor(m string, n int) [2]int {
+func (e *Editor) GetNextMotionCursor(m rune, n int) [2]int {
 	if e.motionIndexes[m] == nil {
 		return e.cursor
 	}
@@ -1131,7 +1185,7 @@ func (e *Editor) GetNextMotionCursor(m string, n int) [2]int {
 		}
 	}
 
-	if strings.ToLower(m) != "n" {
+	if unicode.ToLower(m) != 'n' {
 		return e.cursor
 	}
 	idx := (0 + n) % len(e.motionIndexes[m])
@@ -1139,7 +1193,7 @@ func (e *Editor) GetNextMotionCursor(m string, n int) [2]int {
 }
 
 // n must be greater or equal to 1
-func (e *Editor) GetPrevMotionCursor(m string, n int) [2]int {
+func (e *Editor) GetPrevMotionCursor(m rune, n int) [2]int {
 	if e.motionIndexes[m] == nil {
 		return e.cursor
 	}
@@ -1181,7 +1235,7 @@ func (e *Editor) GetPrevMotionCursor(m string, n int) [2]int {
 		}
 	}
 
-	if strings.ToLower(m) != "n" {
+	if unicode.ToLower(m) != 'n' {
 		return e.cursor
 	}
 	idx := (len(e.motionIndexes[m]) - 1 - n) % len(e.motionIndexes[m])
@@ -1514,12 +1568,12 @@ func (e *Editor) EnableSearch() [2]int {
 	se.SetRect(x, y+h-1, w, 1)
 	se.mode = insert
 	se.onDoneFunc = func(s string) {
-		e.buildSearchIndexes(regexp.QuoteMeta(s), false)
+		e.buildSearchIndexes('n', regexp.QuoteMeta(s), 0)
 		e.operatorRunner[e.pendingAction](e.GetSearchCursor())
 		e.searchEditor = nil
 		e.waitingForMotion = false
 		e.pendingAction = ActionNone
-		e.pendingMotion = ActionNone
+		e.lastMotion = ActionNone
 		e.pending = nil
 		e.pendingCount = 0
 	}
@@ -1527,7 +1581,7 @@ func (e *Editor) EnableSearch() [2]int {
 		e.searchEditor = nil
 		e.waitingForMotion = false
 		e.pendingAction = ActionNone
-		e.pendingMotion = ActionNone
+		e.lastMotion = ActionNone
 		e.pending = nil
 		e.pendingCount = 0
 	}
@@ -1542,7 +1596,15 @@ func (e *Editor) Find() [2]int {
 }
 
 func (e *Editor) AcceptRuneTil(r rune) {
-	e.buildSearchIndexes(regexp.QuoteMeta(string(r)), true)
+	e.buildSearchIndexes('t', regexp.QuoteMeta(string(r)), -1)
+}
+
+func (e *Editor) AcceptRuneTilBack(r rune) {
+	e.buildSearchIndexes('T', regexp.QuoteMeta(string(r)), 1)
+}
+
+func (e *Editor) AcceptRuneFind(r rune) {
+	e.buildSearchIndexes('f', regexp.QuoteMeta(string(r)), 0)
 }
 
 func (e *Editor) ChangeMode(m mode) {
@@ -1668,7 +1730,7 @@ func (e *Editor) GetFirstNonWhitespaceCursor() [2]int {
 	return [2]int{e.cursor[0], idx[0]}
 }
 
-func (e *Editor) MoveMotion(motion string, n int) {
+func (e *Editor) MoveMotion(motion rune, n int) {
 	if n < 0 {
 		e.cursor = e.GetPrevMotionCursor(motion, n*-1)
 		return
@@ -1677,7 +1739,7 @@ func (e *Editor) MoveMotion(motion string, n int) {
 }
 
 func (e *Editor) GetEndOfWordCursor() [2]int {
-	c := e.GetNextMotionCursor("e", e.getActionCount())
+	c := e.GetNextMotionCursor('e', e.getActionCount())
 	if e.pendingAction != ActionNone {
 		c[1]++
 	}
@@ -1685,19 +1747,19 @@ func (e *Editor) GetEndOfWordCursor() [2]int {
 }
 
 func (e *Editor) GetStartOfWordCursor() [2]int {
-	return e.GetNextMotionCursor("w", e.getActionCount())
+	return e.GetNextMotionCursor('w', e.getActionCount())
 }
 
 func (e *Editor) GetBackStartOfWordCursor() [2]int {
-	return e.GetPrevMotionCursor("w", e.getActionCount())
+	return e.GetPrevMotionCursor('w', e.getActionCount())
 }
 
 func (e *Editor) GetBackEndOfWordCursor() [2]int {
-	return e.GetPrevMotionCursor("e", e.getActionCount())
+	return e.GetPrevMotionCursor('e', e.getActionCount())
 }
 
 func (e *Editor) GetSearchCursor() [2]int {
-	return e.GetNextMotionCursor("n", e.getActionCount())
+	return e.GetNextMotionCursor('n', e.getActionCount())
 }
 
 func (e *Editor) GetTilCursor() [2]int {
@@ -1705,10 +1767,43 @@ func (e *Editor) GetTilCursor() [2]int {
 		return e.Find()
 	}
 
-	c := e.GetNextMotionCursor("t", e.getActionCount())
-	if e.pendingAction != ActionNone {
+	c := e.GetNextMotionCursor('t', e.getActionCount())
+	if e.pendingAction != ActionNone && c != e.cursor {
 		c[1]++
 	}
+	return c
+}
+
+func (e *Editor) GetTilBackCursor() [2]int {
+	if !e.waitingForMotion {
+		return e.Find()
+	}
+
+	c := e.GetPrevMotionCursor('T', e.getActionCount())
+	if e.pendingAction != ActionNone && c != e.cursor {
+		c[1]++
+	}
+	return c
+}
+
+func (e *Editor) GetFindCursor() [2]int {
+	if !e.waitingForMotion {
+		return e.Find()
+	}
+
+	c := e.GetNextMotionCursor('f', e.getActionCount())
+	if e.pendingAction != ActionNone && c != e.cursor {
+		c[1]++
+	}
+	return c
+}
+
+func (e *Editor) GetFindBackCursor() [2]int {
+	if !e.waitingForMotion {
+		return e.Find()
+	}
+
+	c := e.GetPrevMotionCursor('f', e.getActionCount())
 	return c
 }
 

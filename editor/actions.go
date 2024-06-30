@@ -40,6 +40,8 @@ const (
 	ActionMoveBackEndOfWord
 	ActionMoveNextSearch
 	ActionMovePrevSearch
+	ActionMoveNextFind
+	ActionMovePrevFind
 	ActionTil
 	ActionTilBack
 	ActionFind
@@ -88,6 +90,8 @@ var actionMapper = map[Action]string{
 	ActionMoveBackEndOfWord:      "move_back_end_of_word",
 	ActionMoveNextSearch:         "move_next_search",
 	ActionMovePrevSearch:         "move_prev_search",
+	ActionMoveNextFind:           "move_next_find",
+	ActionMovePrevFind:           "move_prev_find",
 	ActionTil:                    "til",
 	ActionTilBack:                "til_back",
 	ActionFind:                   "find",

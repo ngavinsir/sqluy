@@ -286,6 +286,56 @@
     },
     {
       "keys": [
+        "T"
+      ],
+      "groups": [
+        "n",
+        "on"
+      ],
+      "action": "editor.til_back"
+    },
+    {
+      "keys": [
+        "f"
+      ],
+      "groups": [
+        "n",
+        "on"
+      ],
+      "action": "editor.find"
+    },
+    {
+      "keys": [
+        "F"
+      ],
+      "groups": [
+        "n",
+        "on"
+      ],
+      "action": "editor.find_back"
+    },
+    {
+      "keys": [
+        ";"
+      ],
+      "groups": [
+        "n",
+        "on"
+      ],
+      "action": "editor.move_next_find"
+    },
+    {
+      "keys": [
+        ","
+      ],
+      "groups": [
+        "n",
+        "on"
+      ],
+      "action": "editor.move_prev_find"
+    },
+    {
+      "keys": [
         "D"
       ],
       "groups": [
