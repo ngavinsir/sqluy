@@ -531,6 +531,7 @@ func New(km keymapper) *Editor {
 	e.operatorRunner = map[Action]func(target [2]int){
 		ActionNone:   e.MoveCursorTo,
 		ActionChange: e.ChangeUntil,
+		ActionDelete: e.DeleteUntil,
 	}
 
 	e.runeRunner = map[Action]func(r rune){
@@ -1627,7 +1628,6 @@ func (e *Editor) DeleteUnderCursor() {
 	}
 	until := [2]int{e.cursor[0], n}
 	e.ReplaceText("", e.cursor, until)
-	e.MoveCursorToLine(e.cursor[0])
 }
 
 func (e *Editor) Undo() {
@@ -1668,13 +1668,15 @@ func (e *Editor) InsertAbove() {
 
 func (e *Editor) ChangeUntil(until [2]int) {
 	e.mode = insert
+	e.DeleteUntil(until)
+}
+
+func (e *Editor) DeleteUntil(until [2]int) {
 	from := e.cursor
 	if until[0] < from[0] || (until[0] == from[0] && until[1] < from[1]) {
 		from, until = until, from
 	}
 	e.ReplaceText("", from, until)
-	e.SaveChanges()
-	e.undoOffset--
 }
 
 func (e *Editor) ChangeUntilEndOfLine() {
