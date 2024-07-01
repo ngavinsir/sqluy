@@ -1154,7 +1154,7 @@ func (e *Editor) InputHandler() func(event *tcell.EventKey, setFocus func(p tvie
 
 			// handle operators actions
 			// no need to wait for motion action in visual mode
-			if action.IsOperator() && (e.mode == visual || e.mode == vline) {
+			if action.IsOperator() && (e.mode == visual || e.mode == vline) && action != ActionVisual && action != ActionVisualLine {
 				prevMode := e.mode
 
 				if e.mode == vline {
