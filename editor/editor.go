@@ -501,6 +501,13 @@ func New(km keymapper, app *tview.Application) *Editor {
 		ActionMovePrevSearch: func() {
 			e.MoveMotion('n', -e.getActionCount())
 		},
+		ActionSwitchVisualStart: func() {
+			if e.mode != visual {
+				return
+			}
+
+			e.visualStart, e.cursor = e.cursor, e.visualStart
+		},
 		ActionMoveNextFind: func() {
 			if e.motionIndexes['f'] != nil && !strings.Contains(e.lastMotion.String(), "back") {
 				e.MoveMotion('f', e.getActionCount())
