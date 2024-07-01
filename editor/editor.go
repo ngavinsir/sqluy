@@ -1753,6 +1753,8 @@ func (e *Editor) buildSurroundIndexes(r rune, inside bool) {
 		return
 	}
 
+	// TODO: fix first opening left side is closed before cursor, but the second opening on the left is closed after cursor
+
 	// if closing cursor before the current cursor, try different opening cursor on the right side
 	if closingCursor[0] < e.cursor[0] || (closingCursor[0] == e.cursor[0] && closingCursor[1] < e.cursor[1]) {
 		openingCursor = e.GetNextMotionCursor('s', e.getActionCount())
