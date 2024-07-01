@@ -544,8 +544,8 @@ func New(km keymapper, app *tview.Application) *Editor {
 		ActionTilBack:                e.GetTilBackCursor,
 		ActionFind:                   e.GetFindCursor,
 		ActionFindBack:               e.GetFindBackCursor,
-		ActionInside:                 e.GetInsideCursor,
-		ActionAround:                 e.GetAroundCursor,
+		ActionInside:                 e.GetInsideOrAroundCursor,
+		ActionAround:                 e.GetInsideOrAroundCursor,
 	}
 
 	e.operatorRunner = map[Action]func(target [2]int){
@@ -634,8 +634,8 @@ func (e *Editor) SetText(text string, cursor [2]int) *Editor {
 
 	e.motionIndexes = make(map[rune][][3]int)
 	spansPerLines := append([][]span{}, e.spansPerLines...)
-	go e.buildMotionwIndexes(e.editCount.Load(), text, spansPerLines)
-	go e.buildMotioneIndexes(e.editCount.Load(), text, spansPerLines)
+	go e.buildMotionwIndexes(e.editCount.Load(), e.text, spansPerLines)
+	go e.buildMotioneIndexes(e.editCount.Load(), e.text, spansPerLines)
 
 	return e
 }
@@ -874,7 +874,7 @@ func (e *Editor) Draw(screen tcell.Screen) {
 		if lastLine > len(e.spansPerLines) {
 			lastLine = len(e.spansPerLines)
 		}
-		for i, _ := range e.spansPerLines[e.offsets[0]:lastLine] {
+		for i := range e.spansPerLines[e.offsets[0]:lastLine] {
 			lineNumber := i + e.offsets[0] - e.cursor[0]
 			if lineNumber < 0 {
 				lineNumber *= -1
@@ -1281,7 +1281,7 @@ func (e *Editor) GetPrevMotionCursor(m rune, n int) [2]int {
 		}
 	}
 
-	for i, _ := range e.motionIndexes[m] {
+	for i := range e.motionIndexes[m] {
 		i = len(e.motionIndexes[m]) - 1 - i
 		index := e.motionIndexes[m][i]
 
@@ -1716,43 +1716,34 @@ func (e *Editor) buildSurroundIndexes(r rune, inside bool) {
 	if !slices.Contains(directionlessMatchBlocks, r) && matchBlockDirection[r] < 0 {
 		r = matchingBlock[r]
 	}
-
 	e.buildSearchIndexes('s', regexp.QuoteMeta(string(r)), 0)
-
 	if e.motionIndexes['s'] == nil {
 		return
 	}
 
-	openingCursor := e.GetPrevMotionCursor('s', e.getActionCount())
+	var openingCursor [2]int
+	var closingCursor [2]int
 
-	// handle if there's no match block on the left side
-	if openingCursor == e.cursor {
-		openingCursor = e.GetNextMotionCursor('s', e.getActionCount())
-	}
+	i := 1
+	left := true
+	for range len(e.motionIndexes['s']) {
+		if left {
+			openingCursor = e.GetPrevMotionCursor('s', i)
+		} else {
+			openingCursor = e.GetNextMotionCursor('s', i)
+		}
 
-	// if not found on right side as well, then can early return
-	if openingCursor == e.cursor {
-		e.motionIndexes['s'] = nil
-		return
-	}
-
-	closingCursor := e.GetMatchingBlock(openingCursor)
-
-	// if there's no matching block, then can early return
-	if openingCursor == closingCursor {
-		e.motionIndexes['s'] = nil
-		return
-	}
-
-	// TODO: fix first opening left side is closed before cursor, but the second opening on the left is closed after cursor
-
-	// if closing cursor before the current cursor, try different opening cursor on the right side
-	if closingCursor[0] < e.cursor[0] || (closingCursor[0] == e.cursor[0] && closingCursor[1] < e.cursor[1]) {
-		openingCursor = e.GetNextMotionCursor('s', e.getActionCount())
 		// if not found on right side as well, then can early return
-		if openingCursor == e.cursor {
+		if !left && openingCursor == e.cursor {
 			e.motionIndexes['s'] = nil
 			return
+		}
+
+		// handle if there's no match block on the left side at all
+		if left && openingCursor == e.cursor {
+			left = false
+			i = 1
+			continue
 		}
 
 		closingCursor = e.GetMatchingBlock(openingCursor)
@@ -1762,6 +1753,23 @@ func (e *Editor) buildSurroundIndexes(r rune, inside bool) {
 			e.motionIndexes['s'] = nil
 			return
 		}
+
+		// if still searching left and closing cursor before the current cursor, try different opening cursor
+		if left && (closingCursor[0] < e.cursor[0] || (closingCursor[0] == e.cursor[0] && closingCursor[1] < e.cursor[1])) {
+			newOpeningCursor := e.GetPrevMotionCursor('s', i+1)
+
+			// if new opening cursor is the same, then can search right
+			if newOpeningCursor == openingCursor {
+				left = false
+				i = 1
+				continue
+			}
+			i++
+			continue
+		}
+
+		// valid, can break
+		break
 	}
 
 	offset := 0
@@ -1967,7 +1975,7 @@ func (e *Editor) GetSearchCursor() [2]int {
 	return e.GetNextMotionCursor('n', e.getActionCount())
 }
 
-func (e *Editor) GetInsideCursor() [2]int {
+func (e *Editor) GetInsideOrAroundCursor() [2]int {
 	if !e.waitingForMotion {
 		return e.WaitingForMotion()
 	}
@@ -1980,23 +1988,12 @@ func (e *Editor) GetInsideCursor() [2]int {
 	e.ChangeMode(visual)
 	e.MoveCursorTo([2]int{e.motionIndexes['s'][0][0], e.motionIndexes['s'][0][1]})
 	e.ChangeMode(mode)
-	return [2]int{e.motionIndexes['s'][1][0], e.motionIndexes['s'][1][1] + 1}
-}
 
-func (e *Editor) GetAroundCursor() [2]int {
-	if !e.waitingForMotion {
-		return e.WaitingForMotion()
+	c := [2]int{e.motionIndexes['s'][1][0], e.motionIndexes['s'][1][1]}
+	if e.pendingAction != ActionNone && c != e.cursor && e.pendingAction != ActionVisual && e.pendingAction != ActionYank {
+		c[1]++
 	}
-
-	if e.motionIndexes['s'] == nil || len(e.motionIndexes['s']) != 2 {
-		return e.cursor
-	}
-
-	mode := e.mode
-	e.ChangeMode(visual)
-	e.MoveCursorTo([2]int{e.motionIndexes['s'][0][0], e.motionIndexes['s'][0][1]})
-	e.ChangeMode(mode)
-	return [2]int{e.motionIndexes['s'][1][0], e.motionIndexes['s'][1][1] + 1}
+	return c
 }
 
 func (e *Editor) GetTilCursor() [2]int {
