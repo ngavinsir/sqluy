@@ -102,6 +102,10 @@ var (
 	}
 
 	rgFirstNonWhitespace = regexp.MustCompile(`\S`)
+	rgMotioneOne         = regexp.MustCompile(`([^{a-zA-Z0-9_À-ÿ}\s])[{a-zA-Z0-9_À-ÿ}\s]`)
+	rgMotioneTwo         = regexp.MustCompile(`([{a-zA-Z0-9_À-ÿ}])(?:[^{a-zA-Z0-9_À-ÿ}]|$)`)
+	rgMotionwOne         = regexp.MustCompile(`([^{a-zA-Z0-9_À-ÿ}\s])[{a-zA-Z0-9_À-ÿ}\s]`)
+	rgMotionwTwo         = regexp.MustCompile(`([{a-zA-Z0-9_À-ÿ}])(?:[^{a-zA-Z0-9_À-ÿ}]|$)`)
 )
 
 func isAsyncMotion(c [2]int) bool {
@@ -684,9 +688,6 @@ func (e *Editor) buildMotionwIndexes(editCount uint64) {
 		}
 	}()
 
-	rgOne := regexp.MustCompile(`(?:^|[^a-zA-Z0-9_À-ÿ])([a-zA-Z0-9_À-ÿ])`)
-	rgTwo := regexp.MustCompile(`(?:^|[a-zA-Z0-9_À-ÿ\s])([^a-zA-Z0-9_À-ÿ\s])`)
-
 	var indexes [][3]int
 	for i, line := range strings.Split(e.text, "\n") {
 		if e.editCount > editCount {
@@ -709,8 +710,8 @@ func (e *Editor) buildMotionwIndexes(editCount uint64) {
 			mapperIdx += s.bytesWidth
 		}
 
-		matchesOne := rgOne.FindAllStringSubmatchIndex(line, -1)
-		matchesTwo := rgTwo.FindAllStringSubmatchIndex(line, -1)
+		matchesOne := rgMotionwOne.FindAllStringSubmatchIndex(line, -1)
+		matchesTwo := rgMotionwTwo.FindAllStringSubmatchIndex(line, -1)
 
 		for _, m := range matchesOne {
 			if len(m) < 4 || m[2] >= m[3] {
@@ -746,9 +747,6 @@ func (e *Editor) buildMotioneIndexes(editCount uint64) {
 		}
 	}()
 
-	rgOne := regexp.MustCompile(`([^{a-zA-Z0-9_À-ÿ}\s])[{a-zA-Z0-9_À-ÿ}\s]`)
-	rgTwo := regexp.MustCompile(`([{a-zA-Z0-9_À-ÿ}])(?:[^{a-zA-Z0-9_À-ÿ}]|$)`)
-
 	var indexes [][3]int
 	for i, line := range strings.Split(e.text, "\n") {
 		if e.editCount > editCount {
@@ -771,8 +769,8 @@ func (e *Editor) buildMotioneIndexes(editCount uint64) {
 			mapperIdx += s.bytesWidth
 		}
 
-		matchesOne := rgOne.FindAllStringSubmatchIndex(line, -1)
-		matchesTwo := rgTwo.FindAllStringSubmatchIndex(line, -1)
+		matchesOne := rgMotioneOne.FindAllStringSubmatchIndex(line, -1)
+		matchesTwo := rgMotioneTwo.FindAllStringSubmatchIndex(line, -1)
 
 		for _, m := range matchesOne {
 			if len(m) < 4 || m[2] >= m[3] {
