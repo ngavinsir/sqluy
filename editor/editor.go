@@ -1124,8 +1124,7 @@ func (e *Editor) InputHandler() func(event *tcell.EventKey, setFocus func(p tvie
 		action := ActionFromString(actionString)
 		// if not found, try again without pending action in pending
 		if action == ActionNone && e.pendingAction != ActionNone && len(e.pending) > 1 {
-			e.pending = e.pending[1:]
-			actionString, anyStartWith = e.keymapper.Get(e.pending, group)
+			actionString, anyStartWith = e.keymapper.Get(e.pending[1:], group)
 			action = ActionFromString(actionString)
 		}
 
@@ -1713,7 +1712,21 @@ func (e *Editor) buildSurroundIndexes(r rune, inside bool) {
 	}
 
 	openingCursor := e.GetPrevMotionCursor('s', e.getActionCount())
+
+	// handle if there's no match block on the left side
+	if openingCursor == e.cursor {
+		openingCursor = e.GetNextMotionCursor('s', e.getActionCount())
+	}
+
+	// if not found on right side as well, then can early return
+	if openingCursor == e.cursor {
+		e.motionIndexes['s'] = nil
+		return
+	}
+
 	closingCursor := e.GetMatchingBlock(openingCursor)
+
+	// if there's no matching block, then can early return
 	if openingCursor == closingCursor {
 		e.motionIndexes['s'] = nil
 		return
@@ -1931,7 +1944,9 @@ func (e *Editor) GetInsideCursor() [2]int {
 		return e.cursor
 	}
 
+	e.ChangeMode(visual)
 	e.MoveCursorTo([2]int{e.motionIndexes['s'][0][0], e.motionIndexes['s'][0][1]})
+	e.ChangeMode(visual)
 	return [2]int{e.motionIndexes['s'][1][0], e.motionIndexes['s'][1][1] + 1}
 }
 
