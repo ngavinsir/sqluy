@@ -295,6 +295,16 @@
     },
     {
       "keys": [
+        "a"
+      ],
+      "groups": [
+        "n",
+        "on"
+      ],
+      "action": "editor.around"
+    },
+    {
+      "keys": [
         "y"
       ],
       "groups": [

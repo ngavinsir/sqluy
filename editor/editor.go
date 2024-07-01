@@ -536,6 +536,7 @@ func New(km keymapper) *Editor {
 		ActionFind:                   e.GetFindCursor,
 		ActionFindBack:               e.GetFindBackCursor,
 		ActionInside:                 e.GetInsideCursor,
+		ActionAround:                 e.GetAroundCursor,
 	}
 
 	e.operatorRunner = map[Action]func(target [2]int){
@@ -552,6 +553,7 @@ func New(km keymapper) *Editor {
 		ActionFind:     e.AcceptRuneFind,
 		ActionFindBack: e.AcceptRuneFind,
 		ActionInside:   e.AcceptRuneInside,
+		ActionAround:   e.AcceptRuneAround,
 	}
 
 	e.decorators = []decorator{
@@ -1180,7 +1182,8 @@ func (e *Editor) InputHandler() func(event *tcell.EventKey, setFocus func(p tvie
 
 			// handle motion actions
 			// ignore countless motion (e.g. start of line motion) if pending count is not zero
-			if action.IsMotion() && (!action.IsCountlessMotion() || e.pendingCount == 0) && e.motionRunner[action] != nil {
+			if action.IsMotion() && (!action.IsCountlessMotion() || e.pendingCount == 0) &&
+				e.motionRunner[action] != nil && (action.IsOperatorlessMotion() || e.pendingAction != ActionNone) {
 				m := e.motionRunner[action]()
 				if isAsyncMotion(m) {
 					e.lastMotion = action
@@ -1210,9 +1213,9 @@ func (e *Editor) InputHandler() func(event *tcell.EventKey, setFocus func(p tvie
 				e.pending = e.pending[:len(e.pending)-1]
 				return
 			}
-
-			e.ResetAction()
 		}
+
+		e.ResetAction()
 	})
 }
 
@@ -1710,6 +1713,10 @@ func (e *Editor) AcceptRuneInside(r rune) {
 	e.buildSurroundIndexes(r, true)
 }
 
+func (e *Editor) AcceptRuneAround(r rune) {
+	e.buildSurroundIndexes(r, false)
+}
+
 func (e *Editor) buildSurroundIndexes(r rune, inside bool) {
 	if !slices.Contains(matchBlocks, r) {
 		return
@@ -1976,9 +1983,26 @@ func (e *Editor) GetInsideCursor() [2]int {
 		return e.cursor
 	}
 
+	mode := e.mode
 	e.ChangeMode(visual)
 	e.MoveCursorTo([2]int{e.motionIndexes['s'][0][0], e.motionIndexes['s'][0][1]})
+	e.ChangeMode(mode)
+	return [2]int{e.motionIndexes['s'][1][0], e.motionIndexes['s'][1][1] + 1}
+}
+
+func (e *Editor) GetAroundCursor() [2]int {
+	if !e.waitingForMotion {
+		return e.WaitingForMotion()
+	}
+
+	if e.motionIndexes['s'] == nil || len(e.motionIndexes['s']) != 2 {
+		return e.cursor
+	}
+
+	mode := e.mode
 	e.ChangeMode(visual)
+	e.MoveCursorTo([2]int{e.motionIndexes['s'][0][0], e.motionIndexes['s'][0][1]})
+	e.ChangeMode(mode)
 	return [2]int{e.motionIndexes['s'][1][0], e.motionIndexes['s'][1][1] + 1}
 }
 

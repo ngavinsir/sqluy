@@ -30,6 +30,7 @@ const (
 	ActionInsertAbove
 	ActionChangeUntilEndOfLine
 	ActionInside
+	ActionAround
 	ActionDeleteUntilEndOfLine
 	ActionDeleteLine
 	ActionReplace
@@ -60,12 +61,12 @@ const (
 var OperatorActions = []Action{ActionChange, ActionDelete, ActionYank, ActionVisual}
 var MotionActions = []Action{ActionMoveLeft, ActionMoveRight, ActionMoveUp, ActionMoveDown, ActionMoveEndOfLine, ActionMoveStartOfLine, ActionMoveFirstNonWhitespace,
 	ActionMoveLastLine, ActionMoveFirstLine, ActionMoveEndOfWord, ActionMoveStartOfWord, ActionMoveBackStartOfWord, ActionMoveBackEndOfWord, ActionEnableSearch, ActionTil,
-	ActionTilBack, ActionFind, ActionFindBack, ActionInside}
+	ActionTilBack, ActionFind, ActionFindBack, ActionInside, ActionAround}
 var CountlessMotionActions = []Action{ActionMoveStartOfLine}
-var OperationlessMotionActions = []Action{ActionMoveLeft, ActionMoveRight, ActionMoveUp, ActionMoveDown, ActionMoveEndOfLine, ActionMoveStartOfLine, ActionMoveFirstNonWhitespace,
+var OperatorlessMotionActions = []Action{ActionMoveLeft, ActionMoveRight, ActionMoveUp, ActionMoveDown, ActionMoveEndOfLine, ActionMoveStartOfLine, ActionMoveFirstNonWhitespace,
 	ActionMoveLastLine, ActionMoveFirstLine, ActionMoveEndOfWord, ActionMoveStartOfWord, ActionMoveBackStartOfWord, ActionMoveBackEndOfWord, ActionEnableSearch, ActionTil,
 	ActionTilBack, ActionFind, ActionFindBack}
-var WaitingForRuneActions = []Action{ActionTil, ActionTilBack, ActionFind, ActionFindBack, ActionInside}
+var WaitingForRuneActions = []Action{ActionTil, ActionTilBack, ActionFind, ActionFindBack, ActionInside, ActionAround}
 
 var actionMapper = map[Action]string{
 	ActionMoveLeft:               "move_left",
@@ -89,6 +90,7 @@ var actionMapper = map[Action]string{
 	ActionInsertAbove:            "insert_above",
 	ActionChangeUntilEndOfLine:   "change_until_end_of_line",
 	ActionInside:                 "inside",
+	ActionAround:                 "around",
 	ActionDeleteUntilEndOfLine:   "delete_until_end_of_line",
 	ActionDeleteLine:             "delete_line",
 	ActionReplace:                "replace",
@@ -133,8 +135,8 @@ func (a Action) IsMotion() bool {
 	return slices.Contains(MotionActions, a)
 }
 
-func (a Action) IsOperationlessMotion() bool {
-	return slices.Contains(OperationlessMotionActions, a)
+func (a Action) IsOperatorlessMotion() bool {
+	return slices.Contains(OperatorlessMotionActions, a)
 }
 
 func (a Action) IsCountlessMotion() bool {
