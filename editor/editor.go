@@ -923,7 +923,6 @@ func (e *Editor) Draw(screen tcell.Screen) {
 		for col, span := range spans {
 			// skip drawing end line sentinel
 			if span.runes == nil {
-				// panic(textX)
 				break
 			}
 			// skip grapheme completely hidden on the left
@@ -1513,7 +1512,7 @@ func (e *Editor) GetLineCursor(n int) [2]int {
 	}
 
 	blockOffset := 0
-	if e.mode == insert {
+	if e.mode == insert || e.mode == vline || e.mode == visual || e.pendingAction == ActionVisual || e.pendingAction == ActionVisualLine {
 		blockOffset = 1
 	}
 	targetRowX := 0
@@ -1597,10 +1596,11 @@ func (e *Editor) GetText(from, until [2]int) string {
 				continue
 			}
 
+			if span.runes == nil {
+				b.WriteString("\n")
+				continue
+			}
 			b.WriteString(string(span.runes))
-		}
-		if i < len(lines)-1 {
-			b.WriteString("\n")
 		}
 	}
 
@@ -1755,9 +1755,9 @@ func (e *Editor) DeleteUntil(until [2]int) {
 }
 
 func (e *Editor) YankUntil(until [2]int) {
-	if e.yankOnVisual {
+	if e.yankOnVisual || e.mode == visual || e.mode == vline {
 		e.yankOnVisual = false
-		if e.mode != visual {
+		if e.mode != visual && e.mode != vline {
 			return
 		}
 
