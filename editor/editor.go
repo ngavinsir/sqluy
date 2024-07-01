@@ -535,6 +535,7 @@ func New(km keymapper) *Editor {
 		ActionTilBack:                e.GetTilBackCursor,
 		ActionFind:                   e.GetFindCursor,
 		ActionFindBack:               e.GetFindBackCursor,
+		ActionChangeInside:           e.GetInsideCursor,
 	}
 
 	e.operatorRunner = map[Action]func(target [2]int){
@@ -546,10 +547,11 @@ func New(km keymapper) *Editor {
 	}
 
 	e.runeRunner = map[Action]func(r rune){
-		ActionTil:      e.AcceptRuneTil,
-		ActionTilBack:  e.AcceptRuneTilBack,
-		ActionFind:     e.AcceptRuneFind,
-		ActionFindBack: e.AcceptRuneFind,
+		ActionTil:          e.AcceptRuneTil,
+		ActionTilBack:      e.AcceptRuneTilBack,
+		ActionFind:         e.AcceptRuneFind,
+		ActionFindBack:     e.AcceptRuneFind,
+		ActionChangeInside: e.AcceptRuneInside,
 	}
 
 	e.decorators = []decorator{
@@ -1674,7 +1676,7 @@ func (e *Editor) EnableSearch() [2]int {
 	return asyncMotion
 }
 
-func (e *Editor) Find() [2]int {
+func (e *Editor) WaitingForMotion() [2]int {
 	e.waitingForMotion = true
 	return asyncMotion
 }
@@ -1689,6 +1691,42 @@ func (e *Editor) AcceptRuneTilBack(r rune) {
 
 func (e *Editor) AcceptRuneFind(r rune) {
 	e.buildSearchIndexes('f', regexp.QuoteMeta(string(r)), 0)
+}
+
+func (e *Editor) AcceptRuneInside(r rune) {
+	e.buildSurroundIndexes(r, true)
+}
+
+func (e *Editor) buildSurroundIndexes(r rune, inside bool) {
+	if !slices.Contains(matchBlocks, r) {
+		return
+	}
+
+	if !slices.Contains(directionlessMatchBlocks, r) && matchBlockDirection[r] < 0 {
+		r = matchingBlock[r]
+	}
+
+	e.buildSearchIndexes('s', regexp.QuoteMeta(string(r)), 0)
+
+	if e.motionIndexes['s'] == nil {
+		return
+	}
+
+	openingCursor := e.GetPrevMotionCursor('s', e.getActionCount())
+	closingCursor := e.GetMatchingBlock(openingCursor)
+	if openingCursor == closingCursor {
+		e.motionIndexes['s'] = nil
+		return
+	}
+
+	offset := 0
+	if inside {
+		offset = 1
+	}
+	e.motionIndexes['s'] = [][3]int{
+		{openingCursor[0], openingCursor[1] + offset, openingCursor[1] + offset},
+		{closingCursor[0], closingCursor[1] - offset, closingCursor[1] - offset},
+	}
 }
 
 func (e *Editor) ChangeMode(m mode) {
@@ -1884,9 +1922,22 @@ func (e *Editor) GetSearchCursor() [2]int {
 	return e.GetNextMotionCursor('n', e.getActionCount())
 }
 
+func (e *Editor) GetInsideCursor() [2]int {
+	if !e.waitingForMotion {
+		return e.WaitingForMotion()
+	}
+
+	if e.motionIndexes['s'] == nil || len(e.motionIndexes['s']) != 2 {
+		return e.cursor
+	}
+
+	e.MoveCursorTo([2]int{e.motionIndexes['s'][0][0], e.motionIndexes['s'][0][1]})
+	return [2]int{e.motionIndexes['s'][1][0], e.motionIndexes['s'][1][1] + 1}
+}
+
 func (e *Editor) GetTilCursor() [2]int {
 	if !e.waitingForMotion {
-		return e.Find()
+		return e.WaitingForMotion()
 	}
 
 	c := e.GetNextMotionCursor('t', e.getActionCount())
@@ -1898,7 +1949,7 @@ func (e *Editor) GetTilCursor() [2]int {
 
 func (e *Editor) GetTilBackCursor() [2]int {
 	if !e.waitingForMotion {
-		return e.Find()
+		return e.WaitingForMotion()
 	}
 
 	c := e.GetPrevMotionCursor('T', e.getActionCount())
@@ -1910,7 +1961,7 @@ func (e *Editor) GetTilBackCursor() [2]int {
 
 func (e *Editor) GetFindCursor() [2]int {
 	if !e.waitingForMotion {
-		return e.Find()
+		return e.WaitingForMotion()
 	}
 
 	c := e.GetNextMotionCursor('f', e.getActionCount())
@@ -1922,7 +1973,7 @@ func (e *Editor) GetFindCursor() [2]int {
 
 func (e *Editor) GetFindBackCursor() [2]int {
 	if !e.waitingForMotion {
-		return e.Find()
+		return e.WaitingForMotion()
 	}
 
 	c := e.GetPrevMotionCursor('f', e.getActionCount())

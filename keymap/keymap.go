@@ -32,8 +32,15 @@ func (k *keyTree) Add(keys []string, action string) {
 	if k.childs == nil {
 		k.childs = make(map[string]*keyTree)
 	}
+	if len(keys) == 0 {
+		k.action = action
+		return
+	}
 	if len(keys) == 1 {
-		k.childs[keys[0]] = &keyTree{action: action}
+		if k.childs[keys[0]] == nil {
+			k.childs[keys[0]] = &keyTree{}
+		}
+		k.childs[keys[0]].Add(nil, action)
 		return
 	}
 	if k.childs[keys[0]] == nil {

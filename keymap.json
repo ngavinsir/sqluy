@@ -285,6 +285,17 @@
     },
     {
       "keys": [
+        "c",
+        "i"
+      ],
+      "groups": [
+        "n",
+        "on"
+      ],
+      "action": "editor.change_inside"
+    },
+    {
+      "keys": [
         "y"
       ],
       "groups": [

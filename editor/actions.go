@@ -29,6 +29,7 @@ const (
 	ActionInsertBelow
 	ActionInsertAbove
 	ActionChangeUntilEndOfLine
+	ActionChangeInside
 	ActionDeleteUntilEndOfLine
 	ActionDeleteLine
 	ActionReplace
@@ -59,9 +60,9 @@ const (
 var OperatorActions = []Action{ActionChange, ActionDelete, ActionYank, ActionVisual}
 var MotionActions = []Action{ActionMoveLeft, ActionMoveRight, ActionMoveUp, ActionMoveDown, ActionMoveEndOfLine, ActionMoveStartOfLine, ActionMoveFirstNonWhitespace,
 	ActionMoveLastLine, ActionMoveFirstLine, ActionMoveEndOfWord, ActionMoveStartOfWord, ActionMoveBackStartOfWord, ActionMoveBackEndOfWord, ActionEnableSearch, ActionTil,
-	ActionTilBack, ActionFind, ActionFindBack}
+	ActionTilBack, ActionFind, ActionFindBack, ActionChangeInside}
 var CountlessMotionActions = []Action{ActionMoveStartOfLine}
-var WaitingForRuneActions = []Action{ActionTil, ActionTilBack, ActionFind, ActionFindBack}
+var WaitingForRuneActions = []Action{ActionTil, ActionTilBack, ActionFind, ActionFindBack, ActionChangeInside}
 
 var actionMapper = map[Action]string{
 	ActionMoveLeft:               "move_left",
@@ -84,6 +85,7 @@ var actionMapper = map[Action]string{
 	ActionInsertBelow:            "insert_below",
 	ActionInsertAbove:            "insert_above",
 	ActionChangeUntilEndOfLine:   "change_until_end_of_line",
+	ActionChangeInside:           "change_inside",
 	ActionDeleteUntilEndOfLine:   "delete_until_end_of_line",
 	ActionDeleteLine:             "delete_line",
 	ActionReplace:                "replace",
