@@ -924,7 +924,7 @@ func (e *Editor) Draw(screen tcell.Screen) {
 
 		for col, span := range spans {
 			// skip drawing end line sentinel
-			if span.runes == nil {
+			if span.runes == nil && col > 0 {
 				break
 			}
 			// skip grapheme completely hidden on the left
@@ -940,12 +940,12 @@ func (e *Editor) Draw(screen tcell.Screen) {
 			runes := span.runes
 			width := span.width
 			// replace too wide grapheme on the left edge that's not a tab
-			if textX < x+e.offsets[1] && textX+width > x+e.offsets[1] && runes[0] != '\t' {
+			if textX < x+e.offsets[1] && textX+width > x+e.offsets[1] && runes != nil && runes[0] != '\t' {
 				c := textX + width - (x + e.offsets[1])
 				runes = []rune(strings.Repeat("<", c))
 				textX += width - c
 				width = c
-			} else if textX+width > x+e.offsets[1]+w && runes[0] != '\t' { // too wide grapheme on the right edge that's not a tab
+			} else if textX+width > x+e.offsets[1]+w && runes != nil && runes[0] != '\t' { // too wide grapheme on the right edge that's not a tab
 				c := (x + e.offsets[1] + w) - textX
 				runes = []rune(strings.Repeat(">", c))
 				width = c
@@ -964,6 +964,10 @@ func (e *Editor) Draw(screen tcell.Screen) {
 						tcell.StyleDefault.Background(bg),
 					)
 				}
+			}
+
+			if span.runes == nil {
+				break
 			}
 
 			// print original text
