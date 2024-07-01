@@ -2,6 +2,7 @@ package keymap
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 )
 
@@ -19,8 +20,8 @@ type (
 	}
 
 	keyTree struct {
-		childs map[string]*keyTree
-		action string
+		childs  map[string]*keyTree
+		actions []string
 	}
 
 	Keymapper struct {
@@ -33,7 +34,7 @@ func (k *keyTree) Add(keys []string, action string) {
 		k.childs = make(map[string]*keyTree)
 	}
 	if len(keys) == 0 {
-		k.action = action
+		k.actions = append(k.actions, action)
 		return
 	}
 	if len(keys) == 1 {
@@ -49,19 +50,19 @@ func (k *keyTree) Add(keys []string, action string) {
 	k.childs[keys[0]].Add(keys[1:], action)
 }
 
-func (k *keyTree) Get(keys []string) (string, bool) {
+func (k *keyTree) Get(keys []string) ([]string, bool) {
 	if k == nil {
-		return "", false
+		return nil, false
 	}
 	if len(keys) == 0 {
-		return k.action, k.childs != nil && len(k.childs) > 0
+		return k.actions, k.childs != nil && len(k.childs) > 0
 	}
 	return k.childs[keys[0]].Get(keys[1:])
 }
 
 func (k *keyTree) String() string {
-	if k.action != "" {
-		return k.action
+	if k.actions != nil {
+		return fmt.Sprintf("%+v", k.actions)
 	}
 	var b strings.Builder
 	for k, c := range k.childs {
@@ -97,9 +98,9 @@ func keyTreePerGroupFromJSONString(s string) map[string]*keyTree {
 	return m
 }
 
-func (k Keymapper) Get(keys []string, group string) (string, bool) {
+func (k Keymapper) Get(keys []string, group string) ([]string, bool) {
 	if k.keyTreePerGroup[group] == nil {
-		return "", false
+		return nil, false
 	}
 	return k.keyTreePerGroup[group].Get(keys)
 }

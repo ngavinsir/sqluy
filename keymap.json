@@ -285,14 +285,13 @@
     },
     {
       "keys": [
-        "c",
         "i"
       ],
       "groups": [
         "n",
         "on"
       ],
-      "action": "editor.change_inside"
+      "action": "editor.inside"
     },
     {
       "keys": [

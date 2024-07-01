@@ -20,7 +20,7 @@ import (
 
 type (
 	keymapper interface {
-		Get(keys []string, group string) (string, bool)
+		Get(keys []string, group string) ([]string, bool)
 	}
 
 	undoStackItem struct {
@@ -535,7 +535,7 @@ func New(km keymapper) *Editor {
 		ActionTilBack:                e.GetTilBackCursor,
 		ActionFind:                   e.GetFindCursor,
 		ActionFindBack:               e.GetFindBackCursor,
-		ActionChangeInside:           e.GetInsideCursor,
+		ActionInside:                 e.GetInsideCursor,
 	}
 
 	e.operatorRunner = map[Action]func(target [2]int){
@@ -547,11 +547,11 @@ func New(km keymapper) *Editor {
 	}
 
 	e.runeRunner = map[Action]func(r rune){
-		ActionTil:          e.AcceptRuneTil,
-		ActionTilBack:      e.AcceptRuneTilBack,
-		ActionFind:         e.AcceptRuneFind,
-		ActionFindBack:     e.AcceptRuneFind,
-		ActionChangeInside: e.AcceptRuneInside,
+		ActionTil:      e.AcceptRuneTil,
+		ActionTilBack:  e.AcceptRuneTilBack,
+		ActionFind:     e.AcceptRuneFind,
+		ActionFindBack: e.AcceptRuneFind,
+		ActionInside:   e.AcceptRuneInside,
 	}
 
 	e.decorators = []decorator{
@@ -1120,85 +1120,99 @@ func (e *Editor) InputHandler() func(event *tcell.EventKey, setFocus func(p tvie
 		}
 
 		// parse action first try
-		actionString, anyStartWith := e.keymapper.Get(e.pending, group)
-		action := ActionFromString(actionString)
-		// if not found, try again without pending action in pending
-		if action == ActionNone && e.pendingAction != ActionNone && len(e.pending) > 1 {
-			actionString, anyStartWith = e.keymapper.Get(e.pending[1:], group)
-			action = ActionFromString(actionString)
+		actionStrings, anyStartWith := e.keymapper.Get(e.pending, group)
+		if actionStrings == nil {
+			actionStrings = []string{""}
 		}
 
-		// if waitingForMotion is true but the event is not a rune event, reset the action state
-		if e.waitingForMotion && event.Key() != tcell.KeyRune {
-			e.ResetAction()
-			return
+		for _, actionString := range actionStrings {
+			action := ActionFromString(actionString)
 
-			// if waitingForMotion is true and the last motion is waiting for a rune and a rune runner exist for it
-		} else if e.waitingForMotion && e.lastMotion.IsWaitingForRune() && e.runeRunner[e.lastMotion] != nil {
-			e.runeRunner[e.lastMotion](event.Rune())
-			action = e.lastMotion
-		}
-
-		// handle operators actions
-		// no need to wait for motion action in visual mode
-		if action.IsOperator() && (e.mode == visual || e.mode == vline) {
-			prevMode := e.mode
-
-			if e.mode == vline {
-				if e.cursor[0] > e.visualStart[0] || (e.cursor[0] == e.visualStart[0] && e.cursor[1] > e.visualStart[1]) {
-					e.cursor, e.visualStart = e.visualStart, e.cursor
+			// if not found, try again without pending action in pending for motion only
+			if action == ActionNone && e.pendingAction != ActionNone && len(e.pending) > 1 {
+				actionStrings, anyStartWith2 := e.keymapper.Get(e.pending[1:], group)
+				for _, actionString := range actionStrings {
+					a := ActionFromString(actionString)
+					if a.IsMotion() {
+						action = a
+						anyStartWith = anyStartWith2
+						break
+					}
 				}
-				e.cursor[1] = 0
-				e.visualStart[1] = len(e.spansPerLines[e.visualStart[0]]) - 1
 			}
 
-			e.operatorRunner[action](e.visualStart)
-			if e.mode == prevMode {
-				e.mode = normal
-			}
-			e.ResetAction()
-			return
-		}
-		// save operator action in pendingAction, wait for the next motion action
-		if action.IsOperator() {
-			e.pendingAction = action
-			return
-		}
+			// if waitingForMotion is true but the event is not a rune event, reset the action state
+			if e.waitingForMotion && event.Key() != tcell.KeyRune {
+				e.ResetAction()
+				return
 
-		// handle motion actions
-		// ignore countless motion (e.g. start of line motion) if pending count is not zero
-		if action.IsMotion() && (!action.IsCountlessMotion() || e.pendingCount == 0) && e.motionRunner[action] != nil {
-			m := e.motionRunner[action]()
-			if isAsyncMotion(m) {
-				e.lastMotion = action
+				// if waitingForMotion is true and the last motion is waiting for a rune and a rune runner exist for it
+			} else if e.waitingForMotion && e.lastMotion.IsWaitingForRune() && e.runeRunner[e.lastMotion] != nil {
+				e.runeRunner[e.lastMotion](event.Rune())
+				action = e.lastMotion
+			}
+
+			// handle operators actions
+			// no need to wait for motion action in visual mode
+			if action.IsOperator() && (e.mode == visual || e.mode == vline) {
+				prevMode := e.mode
+
+				if e.mode == vline {
+					if e.cursor[0] > e.visualStart[0] || (e.cursor[0] == e.visualStart[0] && e.cursor[1] > e.visualStart[1]) {
+						e.cursor, e.visualStart = e.visualStart, e.cursor
+					}
+					e.cursor[1] = 0
+					e.visualStart[1] = len(e.spansPerLines[e.visualStart[0]]) - 1
+				}
+
+				e.operatorRunner[action](e.visualStart)
+				if e.mode == prevMode {
+					e.mode = normal
+				}
+				e.ResetAction()
+				return
+			}
+			// save operator action in pendingAction, wait for the next motion action
+			if action.IsOperator() {
+				e.pendingAction = action
 				return
 			}
 
-			e.operatorRunner[e.pendingAction](m)
+			// handle motion actions
+			// ignore countless motion (e.g. start of line motion) if pending count is not zero
+			if action.IsMotion() && (!action.IsCountlessMotion() || e.pendingCount == 0) && e.motionRunner[action] != nil {
+				m := e.motionRunner[action]()
+				if isAsyncMotion(m) {
+					e.lastMotion = action
+					return
+				}
+
+				e.operatorRunner[e.pendingAction](m)
+				e.ResetAction()
+				return
+			}
+
+			// handle the other action
+			if e.actionRunner[action] != nil {
+				e.actionRunner[action]()
+				e.ResetAction()
+				return
+			}
+
+			// if there's a keymap that starts with runes in pending, don't reset pending
+			if anyStartWith {
+				return
+			}
+
+			// if it's a digit rune event, save it in pending count
+			if isDigit {
+				e.pendingCount = e.pendingCount*10 + int(event.Rune()-'0')
+				e.pending = e.pending[:len(e.pending)-1]
+				return
+			}
+
 			e.ResetAction()
-			return
 		}
-
-		// handle the other action
-		if e.actionRunner[action] != nil {
-			e.actionRunner[action]()
-			e.ResetAction()
-			return
-		}
-
-		// if there's a keymap that starts with runes in pending, don't reset pending
-		if anyStartWith {
-			return
-		}
-
-		// if it's a digit rune event, save it in pending count
-		if isDigit {
-			e.pendingCount = e.pendingCount*10 + int(event.Rune()-'0')
-			e.pending = e.pending[:len(e.pending)-1]
-			return
-		}
-
-		e.ResetAction()
 	})
 }
 
@@ -1730,6 +1744,24 @@ func (e *Editor) buildSurroundIndexes(r rune, inside bool) {
 	if openingCursor == closingCursor {
 		e.motionIndexes['s'] = nil
 		return
+	}
+
+	// if closing cursor before the current cursor, try different opening cursor on the right side
+	if closingCursor[0] < e.cursor[0] || (closingCursor[0] == e.cursor[0] && closingCursor[1] < e.cursor[1]) {
+		openingCursor = e.GetNextMotionCursor('s', e.getActionCount())
+		// if not found on right side as well, then can early return
+		if openingCursor == e.cursor {
+			e.motionIndexes['s'] = nil
+			return
+		}
+
+		closingCursor = e.GetMatchingBlock(openingCursor)
+
+		// if there's no matching block, then can early return
+		if openingCursor == closingCursor {
+			e.motionIndexes['s'] = nil
+			return
+		}
 	}
 
 	offset := 0

@@ -29,7 +29,7 @@ const (
 	ActionInsertBelow
 	ActionInsertAbove
 	ActionChangeUntilEndOfLine
-	ActionChangeInside
+	ActionInside
 	ActionDeleteUntilEndOfLine
 	ActionDeleteLine
 	ActionReplace
@@ -60,9 +60,12 @@ const (
 var OperatorActions = []Action{ActionChange, ActionDelete, ActionYank, ActionVisual}
 var MotionActions = []Action{ActionMoveLeft, ActionMoveRight, ActionMoveUp, ActionMoveDown, ActionMoveEndOfLine, ActionMoveStartOfLine, ActionMoveFirstNonWhitespace,
 	ActionMoveLastLine, ActionMoveFirstLine, ActionMoveEndOfWord, ActionMoveStartOfWord, ActionMoveBackStartOfWord, ActionMoveBackEndOfWord, ActionEnableSearch, ActionTil,
-	ActionTilBack, ActionFind, ActionFindBack, ActionChangeInside}
+	ActionTilBack, ActionFind, ActionFindBack, ActionInside}
 var CountlessMotionActions = []Action{ActionMoveStartOfLine}
-var WaitingForRuneActions = []Action{ActionTil, ActionTilBack, ActionFind, ActionFindBack, ActionChangeInside}
+var OperationlessMotionActions = []Action{ActionMoveLeft, ActionMoveRight, ActionMoveUp, ActionMoveDown, ActionMoveEndOfLine, ActionMoveStartOfLine, ActionMoveFirstNonWhitespace,
+	ActionMoveLastLine, ActionMoveFirstLine, ActionMoveEndOfWord, ActionMoveStartOfWord, ActionMoveBackStartOfWord, ActionMoveBackEndOfWord, ActionEnableSearch, ActionTil,
+	ActionTilBack, ActionFind, ActionFindBack}
+var WaitingForRuneActions = []Action{ActionTil, ActionTilBack, ActionFind, ActionFindBack, ActionInside}
 
 var actionMapper = map[Action]string{
 	ActionMoveLeft:               "move_left",
@@ -85,7 +88,7 @@ var actionMapper = map[Action]string{
 	ActionInsertBelow:            "insert_below",
 	ActionInsertAbove:            "insert_above",
 	ActionChangeUntilEndOfLine:   "change_until_end_of_line",
-	ActionChangeInside:           "change_inside",
+	ActionInside:                 "inside",
 	ActionDeleteUntilEndOfLine:   "delete_until_end_of_line",
 	ActionDeleteLine:             "delete_line",
 	ActionReplace:                "replace",
@@ -128,6 +131,10 @@ func (a Action) IsOperator() bool {
 
 func (a Action) IsMotion() bool {
 	return slices.Contains(MotionActions, a)
+}
+
+func (a Action) IsOperationlessMotion() bool {
+	return slices.Contains(OperationlessMotionActions, a)
 }
 
 func (a Action) IsCountlessMotion() bool {
