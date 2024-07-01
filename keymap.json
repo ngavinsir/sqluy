@@ -15,6 +15,7 @@
         "r",
         "v",
         "on",
+        "ov",
         "oi",
         "or"
       ],
@@ -30,6 +31,7 @@
         "r",
         "v",
         "on",
+        "ov",
         "oi",
         "or"
       ],
@@ -45,6 +47,7 @@
         "r",
         "v",
         "on",
+        "ov",
         "oi",
         "or"
       ],
@@ -60,6 +63,7 @@
         "r",
         "v",
         "on",
+        "ov",
         "oi",
         "or"
       ],
@@ -95,6 +99,7 @@
         "n",
         "v",
         "on",
+        "ov",
         "oi",
         "or"
       ],
@@ -182,6 +187,7 @@
       "groups": [
         "n",
         "v",
+        "ov",
         "on"
       ],
       "action": "editor.move_end_of_word"
@@ -193,6 +199,7 @@
       "groups": [
         "n",
         "v",
+        "ov",
         "on"
       ],
       "action": "editor.move_start_of_word"
@@ -204,6 +211,7 @@
       "groups": [
         "n",
         "v",
+        "ov",
         "on"
       ],
       "action": "editor.move_back_start_of_word"
@@ -216,6 +224,7 @@
       "groups": [
         "n",
         "v",
+        "ov",
         "on"
       ],
       "action": "editor.move_back_end_of_word"
@@ -227,6 +236,7 @@
       "groups": [
         "n",
         "v",
+        "ov",
         "on"
       ],
       "action": "editor.delete_under_cursor"
@@ -280,6 +290,7 @@
       "groups": [
         "n",
         "v",
+        "ov",
         "on"
       ],
       "action": "editor.yank"
@@ -291,6 +302,7 @@
       "groups": [
         "n",
         "v",
+        "ov",
         "on"
       ],
       "action": "editor.delete"
@@ -302,6 +314,7 @@
       "groups": [
         "n",
         "v",
+        "ov",
         "on"
       ],
       "action": "editor.change"
@@ -313,6 +326,7 @@
       "groups": [
         "n",
         "v",
+        "ov",
         "on"
       ],
       "action": "editor.til"
@@ -324,6 +338,7 @@
       "groups": [
         "n",
         "v",
+        "ov",
         "on"
       ],
       "action": "editor.til_back"
@@ -335,6 +350,7 @@
       "groups": [
         "n",
         "v",
+        "ov",
         "on"
       ],
       "action": "editor.find"
@@ -346,6 +362,7 @@
       "groups": [
         "n",
         "v",
+        "ov",
         "on"
       ],
       "action": "editor.find_back"
@@ -357,6 +374,7 @@
       "groups": [
         "n",
         "v",
+        "ov",
         "on"
       ],
       "action": "editor.move_next_find"
@@ -368,6 +386,7 @@
       "groups": [
         "n",
         "v",
+        "ov",
         "on"
       ],
       "action": "editor.move_prev_find"
@@ -389,9 +408,22 @@
       "groups": [
         "n",
         "v",
+        "ov",
         "on"
       ],
       "action": "editor.visual"
+    },
+    {
+      "keys": [
+        "V"
+      ],
+      "groups": [
+        "n",
+        "v",
+        "ov",
+        "on"
+      ],
+      "action": "editor.visual_line"
     },
     {
       "keys": [
@@ -400,6 +432,7 @@
       "groups": [
         "n",
         "v",
+        "ov",
         "on"
       ],
       "action": "editor.move_match_block"
@@ -431,6 +464,7 @@
       "groups": [
         "n",
         "v",
+        "ov",
         "on"
       ],
       "action": "editor.move_end_of_line"
@@ -442,6 +476,7 @@
       "groups": [
         "n",
         "v",
+        "ov",
         "on"
       ],
       "action": "editor.move_start_of_line"
@@ -453,6 +488,7 @@
       "groups": [
         "n",
         "v",
+        "ov",
         "on"
       ],
       "action": "editor.move_first_non_whitespace"
@@ -474,6 +510,7 @@
       "groups": [
         "n",
         "v",
+        "ov",
         "on"
       ],
       "action": "editor.move_last_line"
@@ -486,6 +523,7 @@
       "groups": [
         "n",
         "v",
+        "ov",
         "on"
       ],
       "action": "editor.move_first_line"

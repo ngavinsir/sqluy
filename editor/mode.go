@@ -7,6 +7,7 @@ const (
 	insert
 	replace
 	visual
+	vline
 )
 
 func (m mode) String() string {
@@ -17,6 +18,8 @@ func (m mode) String() string {
 		return "REPLACE"
 	case visual:
 		return "VISUAL"
+	case vline:
+		return "V-LINE"
 	default:
 		return "NORMAL"
 	}
@@ -28,7 +31,7 @@ func (m mode) ShortString() string {
 		return "i"
 	case replace:
 		return "r"
-	case visual:
+	case visual, vline:
 		return "v"
 	default:
 		return "n"

@@ -45,6 +45,7 @@ const (
 	ActionMoveMatchBlock
 	ActionSwitchVisualStart
 	ActionVisual
+	ActionVisualLine
 	ActionTil
 	ActionTilBack
 	ActionFind
@@ -99,6 +100,7 @@ var actionMapper = map[Action]string{
 	ActionMoveMatchBlock:         "move_match_block",
 	ActionSwitchVisualStart:      "switch_visual_start",
 	ActionVisual:                 "visual",
+	ActionVisualLine:             "visual_line",
 	ActionTil:                    "til",
 	ActionTilBack:                "til_back",
 	ActionFind:                   "find",

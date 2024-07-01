@@ -472,6 +472,14 @@ func New(km keymapper) *Editor {
 				e.DeleteLine()
 			}
 		},
+		ActionVisualLine: func() {
+			if e.mode == vline {
+				e.ChangeMode(normal)
+				return
+			}
+			e.visualStart = [2]int{e.cursor[0], 0}
+			e.ChangeMode(vline)
+		},
 		ActionMoveMatchBlock: func() {
 			e.MoveCursorTo(e.GetMatchingBlock(e.cursor))
 		},
@@ -1133,8 +1141,17 @@ func (e *Editor) InputHandler() func(event *tcell.EventKey, setFocus func(p tvie
 
 		// handle operators actions
 		// no need to wait for motion action in visual mode
-		if action.IsOperator() && e.mode == visual {
+		if action.IsOperator() && (e.mode == visual || e.mode == vline) {
 			prevMode := e.mode
+
+			if e.mode == vline {
+				if e.cursor[0] > e.visualStart[0] || (e.cursor[0] == e.visualStart[0] && e.cursor[1] > e.visualStart[1]) {
+					e.cursor, e.visualStart = e.visualStart, e.cursor
+				}
+				e.cursor[1] = 0
+				e.visualStart[1] = len(e.spansPerLines[e.visualStart[0]]) - 1
+			}
+
 			e.operatorRunner[action](e.visualStart)
 			if e.mode == prevMode {
 				e.mode = normal
@@ -1733,6 +1750,7 @@ func (e *Editor) DeleteUntil(until [2]int) {
 	if until[0] < from[0] || (until[0] == from[0] && until[1] < from[1]) {
 		from, until = until, from
 	}
+	clipboard.Write(e.GetText(from, until))
 	e.ReplaceText("", from, until)
 }
 
@@ -2017,7 +2035,7 @@ func (e *Editor) searchDecorator(row, col int) (decoration, bool) {
 }
 
 func (e *Editor) visualDecorator(row, col int) (decoration, bool) {
-	if e.mode != visual {
+	if e.mode != visual && e.mode != vline {
 		return decoration{}, false
 	}
 
@@ -2028,9 +2046,12 @@ func (e *Editor) visualDecorator(row, col int) (decoration, bool) {
 	}
 
 	style := tcell.StyleDefault.Background(tview.Styles.MoreContrastBackgroundColor).Foreground(tview.Styles.PrimitiveBackgroundColor)
-	if (row == from[0] && col >= from[1] && row == until[0] && col <= until[1]) ||
+	if (e.mode == visual &&
+		(row == from[0] && col >= from[1] && row == until[0] && col <= until[1]) ||
 		(row == from[0] && row < until[0] && col >= from[1]) ||
-		(row > from[0] && row < until[0]) || (row == until[0] && row > from[0] && col <= until[1]) {
+		(row > from[0] && row < until[0]) || (row == until[0] && row > from[0] && col <= until[1])) ||
+		(e.mode == vline &&
+			(row >= from[0] && row <= until[0])) {
 		return decoration{style: style, text: ""}, true
 	}
 
