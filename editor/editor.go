@@ -8,6 +8,8 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 	"unicode"
 	"unicode/utf8"
@@ -47,32 +49,34 @@ type (
 		viewModalFunc func(string)
 		onDoneFunc    func(string)
 		delayDrawFunc func(time.Time)
+		app           *tview.Application
 		onExitFunc    func()
 		*tview.Box
-		searchEditor     *Editor
-		actionRunner     map[Action]func()
-		operatorRunner   map[Action]func(target [2]int)
-		motionRunner     map[Action]func() [2]int
-		runeRunner       map[Action]func(r rune)
-		motionIndexes    map[rune][][3]int
-		text             string
-		spansPerLines    [][]span
-		pending          []string
-		undoStack        []undoStackItem
-		decorators       []decorator
-		cursor           [2]int
-		visualStart      [2]int
-		offsets          [2]int
-		pendingCount     int
-		tabSize          int
-		editCount        uint64
-		undoOffset       int
-		pendingAction    Action
-		lastMotion       Action
-		mode             mode
-		oneLineMode      bool
-		waitingForMotion bool
-		yankOnVisual     bool // for yank indicator utilizng visual mode
+		searchEditor       *Editor
+		actionRunner       map[Action]func()
+		operatorRunner     map[Action]func(target [2]int)
+		motionRunner       map[Action]func() [2]int
+		runeRunner         map[Action]func(r rune)
+		motionIndexes      map[rune][][3]int
+		motionIndexesMutex *sync.RWMutex
+		text               string
+		spansPerLines      [][]span
+		pending            []string
+		undoStack          []undoStackItem
+		decorators         []decorator
+		cursor             [2]int
+		visualStart        [2]int
+		offsets            [2]int
+		pendingCount       int
+		tabSize            int
+		editCount          atomic.Uint64
+		undoOffset         int
+		pendingAction      Action
+		lastMotion         Action
+		mode               mode
+		oneLineMode        bool
+		waitingForMotion   bool
+		yankOnVisual       bool // for yank indicator utilizng visual mode
 	}
 )
 
@@ -112,11 +116,12 @@ func isAsyncMotion(c [2]int) bool {
 	return c == asyncMotion
 }
 
-func New(km keymapper) *Editor {
+func New(km keymapper, app *tview.Application) *Editor {
 	e := &Editor{
 		tabSize:   4,
 		Box:       tview.NewBox(),
 		keymapper: km,
+		app:       app,
 	}
 	// e.SetText("amsok", [2]int{0, 0})
 	e.SetText(`
@@ -587,7 +592,7 @@ func (e *Editor) SetDelayDrawFunc(f func(time.Time)) *Editor {
 }
 
 func (e *Editor) SetText(text string, cursor [2]int) *Editor {
-	e.editCount++
+	e.editCount.Add(1)
 	clear(e.spansPerLines)
 
 	lines := strings.Split(text, "\n")
@@ -628,8 +633,9 @@ func (e *Editor) SetText(text string, cursor [2]int) *Editor {
 	e.MoveCursorToLine(cursor[0])
 
 	e.motionIndexes = make(map[rune][][3]int)
-	go e.buildMotionwIndexes(e.editCount)
-	go e.buildMotioneIndexes(e.editCount)
+	spansPerLines := append([][]span{}, e.spansPerLines...)
+	go e.buildMotionwIndexes(e.editCount.Load(), text, spansPerLines)
+	go e.buildMotioneIndexes(e.editCount.Load(), text, spansPerLines)
 
 	return e
 }
@@ -679,18 +685,10 @@ func (e *Editor) buildSearchIndexes(group rune, query string, offset int) bool {
 	return foundMatches
 }
 
-func (e *Editor) buildMotionwIndexes(editCount uint64) {
-	defer func() {
-		if r := recover(); r != nil && e.screen != nil {
-			WriteFile(fmt.Sprintf("%+v", r))
-			e.screen.Fini()
-			panic(r)
-		}
-	}()
-
+func (e *Editor) buildMotionwIndexes(editCount uint64, text string, spansPerLines [][]span) {
 	var indexes [][3]int
-	for i, line := range strings.Split(e.text, "\n") {
-		if e.editCount > editCount {
+	for i, line := range strings.Split(text, "\n") {
+		if e.editCount.Load() > editCount {
 			return
 		}
 		if len(line) == 0 {
@@ -698,12 +696,12 @@ func (e *Editor) buildMotionwIndexes(editCount uint64) {
 		}
 
 		bytesWidthSum := 0
-		for _, s := range e.spansPerLines[i] {
+		for _, s := range spansPerLines[i] {
 			bytesWidthSum += s.bytesWidth
 		}
 		mapper := make([]int, bytesWidthSum)
 		mapperIdx := 0
-		for i, s := range e.spansPerLines[i] {
+		for i, s := range spansPerLines[i] {
 			for j := range s.bytesWidth {
 				mapper[mapperIdx+j] = i
 			}
@@ -732,24 +730,18 @@ func (e *Editor) buildMotionwIndexes(editCount uint64) {
 		return indexes[i][0] < indexes[j][0] || (indexes[i][0] == indexes[j][0] && indexes[i][1] < indexes[j][1])
 	})
 
-	if e.editCount > editCount {
+	if e.editCount.Load() > editCount {
 		return
 	}
-	e.motionIndexes['w'] = indexes
+	e.app.QueueUpdate(func() {
+		e.motionIndexes['w'] = indexes
+	})
 }
 
-func (e *Editor) buildMotioneIndexes(editCount uint64) {
-	defer func() {
-		if r := recover(); r != nil && e.screen != nil {
-			WriteFile(fmt.Sprintf("%+v", r))
-			e.screen.Fini()
-			panic(r)
-		}
-	}()
-
+func (e *Editor) buildMotioneIndexes(editCount uint64, text string, spansPerLines [][]span) {
 	var indexes [][3]int
-	for i, line := range strings.Split(e.text, "\n") {
-		if e.editCount > editCount {
+	for i, line := range strings.Split(text, "\n") {
+		if e.editCount.Load() > editCount {
 			return
 		}
 		if len(line) == 0 {
@@ -757,12 +749,12 @@ func (e *Editor) buildMotioneIndexes(editCount uint64) {
 		}
 
 		bytesWidthSum := 0
-		for _, s := range e.spansPerLines[i] {
+		for _, s := range spansPerLines[i] {
 			bytesWidthSum += s.bytesWidth
 		}
 		mapper := make([]int, bytesWidthSum)
 		mapperIdx := 0
-		for i, s := range e.spansPerLines[i] {
+		for i, s := range spansPerLines[i] {
 			for j := range s.bytesWidth {
 				mapper[mapperIdx+j] = i
 			}
@@ -791,11 +783,12 @@ func (e *Editor) buildMotioneIndexes(editCount uint64) {
 		return indexes[i][0] < indexes[j][0] || (indexes[i][0] == indexes[j][0] && indexes[i][1] < indexes[j][1])
 	})
 
-	if e.editCount > editCount {
+	if e.editCount.Load() > editCount {
 		return
 	}
-	e.motionIndexes['e'] = indexes
-	// panic(fmt.Sprintf("%+v", indexes[:40]))
+	e.app.QueueUpdate(func() {
+		e.motionIndexes['e'] = indexes
+	})
 }
 
 func (e *Editor) Draw(screen tcell.Screen) {
@@ -1670,7 +1663,7 @@ func (e *Editor) Redo() {
 
 func (e *Editor) EnableSearch() [2]int {
 	x, y, w, h := e.Box.GetInnerRect()
-	se := New(e.keymapper).SetOneLineMode(true)
+	se := New(e.keymapper, e.app).SetOneLineMode(true)
 	se.SetText("", [2]int{0, 0})
 	se.SetRect(x, y+h-1, w, 1)
 	se.SetDelayDrawFunc(e.delayDrawFunc)

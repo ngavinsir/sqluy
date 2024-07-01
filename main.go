@@ -25,6 +25,7 @@ var keymapString string
 
 func main() {
 	var wg sync.WaitGroup
+	app := tview.NewApplication()
 	ctx, cancel := context.WithCancel(context.Background())
 	km := keymap.New(keymapString)
 
@@ -33,7 +34,7 @@ func main() {
 
 	page := tview.NewPages()
 
-	e := editor.New(km)
+	e := editor.New(km, app)
 	e.SetViewModalFunc(func(text string) {
 		modalChan <- ShowModalArg{Text: text, Refocus: e}
 	})
@@ -57,7 +58,6 @@ func main() {
 	page.SetRect(0, 0, 15, 8)
 
 	wg.Add(2)
-	app := tview.NewApplication()
 	go modalLoop(ctx, modalChan, page, modal, app, &wg)
 	go delayDrawLoop(ctx, &wg, delayDrawChan, app)
 	err := app.SetRoot(page, true).Run()
