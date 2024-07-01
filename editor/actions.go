@@ -40,6 +40,8 @@ const (
 	ActionMoveStartOfWord
 	ActionMoveBackStartOfWord
 	ActionMoveBackEndOfWord
+	ActionMoveStartOfBigWord
+	ActionMoveBackStartOfBigWord
 	ActionMoveNextSearch
 	ActionMovePrevSearch
 	ActionMoveNextFind
@@ -61,11 +63,11 @@ const (
 var OperatorActions = []Action{ActionChange, ActionDelete, ActionYank, ActionVisual}
 var MotionActions = []Action{ActionMoveLeft, ActionMoveRight, ActionMoveUp, ActionMoveDown, ActionMoveEndOfLine, ActionMoveStartOfLine, ActionMoveFirstNonWhitespace,
 	ActionMoveLastLine, ActionMoveFirstLine, ActionMoveEndOfWord, ActionMoveStartOfWord, ActionMoveBackStartOfWord, ActionMoveBackEndOfWord, ActionEnableSearch, ActionTil,
-	ActionTilBack, ActionFind, ActionFindBack, ActionInside, ActionAround}
+	ActionTilBack, ActionFind, ActionFindBack, ActionInside, ActionAround, ActionMoveStartOfBigWord, ActionMoveBackStartOfBigWord}
 var CountlessMotionActions = []Action{ActionMoveStartOfLine}
 var OperatorlessMotionActions = []Action{ActionMoveLeft, ActionMoveRight, ActionMoveUp, ActionMoveDown, ActionMoveEndOfLine, ActionMoveStartOfLine, ActionMoveFirstNonWhitespace,
 	ActionMoveLastLine, ActionMoveFirstLine, ActionMoveEndOfWord, ActionMoveStartOfWord, ActionMoveBackStartOfWord, ActionMoveBackEndOfWord, ActionEnableSearch, ActionTil,
-	ActionTilBack, ActionFind, ActionFindBack}
+	ActionTilBack, ActionFind, ActionFindBack, ActionMoveStartOfBigWord, ActionMoveBackStartOfBigWord}
 var WaitingForRuneActions = []Action{ActionTil, ActionTilBack, ActionFind, ActionFindBack, ActionInside, ActionAround}
 
 var actionMapper = map[Action]string{
@@ -99,6 +101,8 @@ var actionMapper = map[Action]string{
 	ActionMoveEndOfWord:          "move_end_of_word",
 	ActionMoveStartOfWord:        "move_start_of_word",
 	ActionMoveBackStartOfWord:    "move_back_start_of_word",
+	ActionMoveStartOfBigWord:     "move_start_of_big_word",
+	ActionMoveBackStartOfBigWord: "move_back_start_of_big_word",
 	ActionMoveBackEndOfWord:      "move_back_end_of_word",
 	ActionMoveNextSearch:         "move_next_search",
 	ActionMovePrevSearch:         "move_prev_search",

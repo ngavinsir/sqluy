@@ -218,6 +218,30 @@
     },
     {
       "keys": [
+        "B"
+      ],
+      "groups": [
+        "n",
+        "v",
+        "ov",
+        "on"
+      ],
+      "action": "editor.move_back_start_of_big_word"
+    },
+    {
+      "keys": [
+        "W"
+      ],
+      "groups": [
+        "n",
+        "v",
+        "ov",
+        "on"
+      ],
+      "action": "editor.move_start_of_big_word"
+    },
+    {
+      "keys": [
         "g",
         "e"
       ],
