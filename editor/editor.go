@@ -1279,12 +1279,12 @@ func (e *Editor) MoveCursorTo(to [2]int) {
 	e.MoveCursorToLine(e.cursor[0])
 }
 
-func (e *Editor) GetNextMotionCursor(m rune, n int, cursor [2]int, inclusive bool) [2]int {
+func (e *Editor) GetNextMotionCursor(m rune, n int, cursor [2]int, inclusive bool) ([2]int, bool) {
 	if e.motionIndexes[m] == nil {
-		return cursor
+		return cursor, false
 	}
 	if len(e.motionIndexes[m]) == 1 {
-		return [2]int{e.motionIndexes[m][0][0], e.motionIndexes[m][0][1]}
+		return [2]int{e.motionIndexes[m][0][0], e.motionIndexes[m][0][1]}, true
 	}
 	if n < 1 {
 		n = 1
@@ -1307,24 +1307,24 @@ func (e *Editor) GetNextMotionCursor(m rune, n int, cursor [2]int, inclusive boo
 
 		if index[1] > col {
 			idx := (i + n) % len(e.motionIndexes[m])
-			return [2]int{e.motionIndexes[m][idx][0], e.motionIndexes[m][idx][1]}
+			return [2]int{e.motionIndexes[m][idx][0], e.motionIndexes[m][idx][1]}, true
 		}
 	}
 
 	if unicode.ToLower(m) != 'n' {
-		return cursor
+		return cursor, false
 	}
 	idx := (0 + n) % len(e.motionIndexes[m])
-	return [2]int{e.motionIndexes[m][idx][0], e.motionIndexes[m][idx][1]}
+	return [2]int{e.motionIndexes[m][idx][0], e.motionIndexes[m][idx][1]}, true
 }
 
 // n must be greater or equal to 1
-func (e *Editor) GetPrevMotionCursor(m rune, n int, cursor [2]int, inclusive bool) [2]int {
+func (e *Editor) GetPrevMotionCursor(m rune, n int, cursor [2]int, inclusive bool) ([2]int, bool) {
 	if e.motionIndexes[m] == nil {
-		return cursor
+		return cursor, false
 	}
 	if len(e.motionIndexes[m]) == 1 {
-		return [2]int{e.motionIndexes[m][0][0], e.motionIndexes[m][0][1]}
+		return [2]int{e.motionIndexes[m][0][0], e.motionIndexes[m][0][1]}, true
 	}
 	if n < 1 {
 		n = 1
@@ -1363,18 +1363,18 @@ func (e *Editor) GetPrevMotionCursor(m rune, n int, cursor [2]int, inclusive boo
 			if idx < 0 {
 				idx += len(e.motionIndexes[m])
 			}
-			return [2]int{e.motionIndexes[m][idx][0], e.motionIndexes[m][idx][1]}
+			return [2]int{e.motionIndexes[m][idx][0], e.motionIndexes[m][idx][1]}, true
 		}
 	}
 
 	if unicode.ToLower(m) != 'n' {
-		return cursor
+		return cursor, false
 	}
 	idx := (len(e.motionIndexes[m]) - 1 - n) % len(e.motionIndexes[m])
 	if idx < 0 {
 		idx += len(e.motionIndexes[m])
 	}
-	return [2]int{e.motionIndexes[m][idx][0], e.motionIndexes[m][idx][1]}
+	return [2]int{e.motionIndexes[m][idx][0], e.motionIndexes[m][idx][1]}, true
 }
 
 func (e *Editor) MoveCursorRight() {
@@ -1775,8 +1775,11 @@ func (e *Editor) AcceptRuneAround(r rune) {
 
 func (e *Editor) buildSurroundIndexes(r rune, inside bool) {
 	if r == 'w' {
-		openingCursor := e.GetPrevMotionCursor('w', 1, e.cursor, true)
-		closingCursor := e.GetNextMotionCursor('e', 1, e.cursor, true)
+		openingCursor, foundOpening := e.GetPrevMotionCursor('w', 1, e.cursor, true)
+		closingCursor, foundClosing := e.GetNextMotionCursor('e', 1, e.cursor, true)
+		if !foundOpening || !foundClosing {
+			return
+		}
 		e.motionIndexes['s'] = [][3]int{
 			{openingCursor[0], openingCursor[1], openingCursor[1]},
 			{closingCursor[0], closingCursor[1], closingCursor[1]},
@@ -1799,23 +1802,24 @@ func (e *Editor) buildSurroundIndexes(r rune, inside bool) {
 	var openingCursor [2]int
 	var closingCursor [2]int
 
+	found := false
 	i := 1
 	left := true
 	for range len(e.motionIndexes['s']) {
 		if left {
-			openingCursor = e.GetPrevMotionCursor('s', i, e.cursor, false)
+			openingCursor, found = e.GetPrevMotionCursor('s', i, e.cursor, true)
 		} else {
-			openingCursor = e.GetNextMotionCursor('s', i, e.cursor, false)
+			openingCursor, found = e.GetNextMotionCursor('s', i, e.cursor, false)
 		}
 
 		// if not found on right side as well, then can early return
-		if !left && openingCursor == e.cursor {
+		if !left && !found {
 			e.motionIndexes['s'] = nil
 			return
 		}
 
 		// handle if there's no match block on the left side at all
-		if left && openingCursor == e.cursor {
+		if left && !found {
 			left = false
 			i = 1
 			continue
@@ -1831,7 +1835,7 @@ func (e *Editor) buildSurroundIndexes(r rune, inside bool) {
 
 		// if still searching left and closing cursor before the current cursor, try different opening cursor
 		if left && (closingCursor[0] < e.cursor[0] || (closingCursor[0] == e.cursor[0] && closingCursor[1] < e.cursor[1])) {
-			newOpeningCursor := e.GetPrevMotionCursor('s', i+1, e.cursor, false)
+			newOpeningCursor, _ := e.GetPrevMotionCursor('s', i+1, e.cursor, false)
 
 			// if new opening cursor is the same, then can search right
 			if newOpeningCursor == openingCursor {
@@ -2020,14 +2024,14 @@ func (e *Editor) GetFirstNonWhitespaceCursor() [2]int {
 
 func (e *Editor) MoveMotion(motion rune, n int) {
 	if n < 0 {
-		e.cursor = e.GetPrevMotionCursor(motion, n*-1, e.cursor, false)
+		e.cursor, _ = e.GetPrevMotionCursor(motion, n*-1, e.cursor, false)
 		return
 	}
-	e.cursor = e.GetNextMotionCursor(motion, n, e.cursor, false)
+	e.cursor, _ = e.GetNextMotionCursor(motion, n, e.cursor, false)
 }
 
 func (e *Editor) GetEndOfWordCursor() [2]int {
-	c := e.GetNextMotionCursor('e', e.getActionCount(), e.cursor, false)
+	c, _ := e.GetNextMotionCursor('e', e.getActionCount(), e.cursor, false)
 	if e.pendingAction != ActionNone && e.pendingAction != ActionVisual && e.pendingAction != ActionYank {
 		c[1]++
 	}
@@ -2035,27 +2039,33 @@ func (e *Editor) GetEndOfWordCursor() [2]int {
 }
 
 func (e *Editor) GetStartOfWordCursor() [2]int {
-	return e.GetNextMotionCursor('w', e.getActionCount(), e.cursor, false)
+	c, _ := e.GetNextMotionCursor('w', e.getActionCount(), e.cursor, false)
+	return c
 }
 
 func (e *Editor) GetStartOfBigWordCursor() [2]int {
-	return e.GetNextMotionCursor('W', e.getActionCount(), e.cursor, false)
+	c, _ := e.GetNextMotionCursor('W', e.getActionCount(), e.cursor, false)
+	return c
 }
 
 func (e *Editor) GetBackStartOfBigWordCursor() [2]int {
-	return e.GetPrevMotionCursor('W', e.getActionCount(), e.cursor, false)
+	c, _ := e.GetPrevMotionCursor('W', e.getActionCount(), e.cursor, false)
+	return c
 }
 
 func (e *Editor) GetBackStartOfWordCursor() [2]int {
-	return e.GetPrevMotionCursor('w', e.getActionCount(), e.cursor, false)
+	c, _ := e.GetPrevMotionCursor('w', e.getActionCount(), e.cursor, false)
+	return c
 }
 
 func (e *Editor) GetBackEndOfWordCursor() [2]int {
-	return e.GetPrevMotionCursor('e', e.getActionCount(), e.cursor, false)
+	c, _ := e.GetPrevMotionCursor('e', e.getActionCount(), e.cursor, false)
+	return c
 }
 
 func (e *Editor) GetSearchCursor() [2]int {
-	return e.GetNextMotionCursor('n', e.getActionCount(), e.cursor, false)
+	c, _ := e.GetNextMotionCursor('n', e.getActionCount(), e.cursor, false)
+	return c
 }
 
 func (e *Editor) GetInsideOrAroundCursor() [2]int {
@@ -2084,8 +2094,8 @@ func (e *Editor) GetTilCursor() [2]int {
 		return e.WaitingForMotion()
 	}
 
-	c := e.GetNextMotionCursor('t', e.getActionCount(), e.cursor, false)
-	if e.pendingAction != ActionNone && c != e.cursor && e.pendingAction != ActionVisual && e.pendingAction != ActionYank {
+	c, found := e.GetNextMotionCursor('t', e.getActionCount(), e.cursor, false)
+	if found && e.pendingAction != ActionNone && c != e.cursor && e.pendingAction != ActionVisual && e.pendingAction != ActionYank {
 		c[1]++
 	}
 	return c
@@ -2096,8 +2106,8 @@ func (e *Editor) GetTilBackCursor() [2]int {
 		return e.WaitingForMotion()
 	}
 
-	c := e.GetPrevMotionCursor('T', e.getActionCount(), e.cursor, false)
-	if e.pendingAction != ActionNone && c != e.cursor && e.pendingAction != ActionVisual && e.pendingAction != ActionYank {
+	c, found := e.GetPrevMotionCursor('T', e.getActionCount(), e.cursor, false)
+	if found && e.pendingAction != ActionNone && c != e.cursor && e.pendingAction != ActionVisual && e.pendingAction != ActionYank {
 		c[1]++
 	}
 	return c
@@ -2108,8 +2118,8 @@ func (e *Editor) GetFindCursor() [2]int {
 		return e.WaitingForMotion()
 	}
 
-	c := e.GetNextMotionCursor('f', e.getActionCount(), e.cursor, false)
-	if e.pendingAction != ActionNone && c != e.cursor && e.pendingAction != ActionVisual && e.pendingAction != ActionYank {
+	c, found := e.GetNextMotionCursor('f', e.getActionCount(), e.cursor, false)
+	if found && e.pendingAction != ActionNone && c != e.cursor && e.pendingAction != ActionVisual && e.pendingAction != ActionYank {
 		c[1]++
 	}
 	return c
@@ -2120,7 +2130,7 @@ func (e *Editor) GetFindBackCursor() [2]int {
 		return e.WaitingForMotion()
 	}
 
-	c := e.GetPrevMotionCursor('f', e.getActionCount(), e.cursor, false)
+	c, _ := e.GetPrevMotionCursor('f', e.getActionCount(), e.cursor, false)
 	return c
 }
 
