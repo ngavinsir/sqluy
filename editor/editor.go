@@ -110,6 +110,7 @@ var (
 	rgMotioneTwo         = regexp.MustCompile(`([{a-zA-Z0-9_À-ÿ}])(?:[^{a-zA-Z0-9_À-ÿ}]|$)`)
 	rgMotionwOne         = regexp.MustCompile(`(?:^|[^a-zA-Z0-9_À-ÿ])([a-zA-Z0-9_À-ÿ])`)
 	rgMotionwTwo         = regexp.MustCompile(`(?:^|[a-zA-Z0-9_À-ÿ\s])([^a-zA-Z0-9_À-ÿ\s])`)
+	rgMotionW            = regexp.MustCompile(`\s(\S)`)
 )
 
 func isAsyncMotion(c [2]int) bool {
@@ -543,6 +544,8 @@ func New(km keymapper, app *tview.Application) *Editor {
 		ActionMoveLastLine:           e.GetLastLineCursor,
 		ActionMoveFirstLine:          e.GetFirstLineCursor,
 		ActionMoveStartOfWord:        e.GetStartOfWordCursor,
+		ActionMoveStartOfBigWord:     e.GetStartOfBigWordCursor,
+		ActionMoveBackStartOfBigWord: e.GetBackStartOfBigWordCursor,
 		ActionMoveEndOfWord:          e.GetEndOfWordCursor,
 		ActionMoveBackEndOfWord:      e.GetBackEndOfWordCursor,
 		ActionMoveBackStartOfWord:    e.GetBackStartOfWordCursor,
@@ -599,7 +602,7 @@ func (e *Editor) SetDelayDrawFunc(f func(time.Time)) *Editor {
 }
 
 func (e *Editor) SetText(text string, cursor [2]int) *Editor {
-	e.editCount.Add(1)
+	editCount := e.editCount.Add(1)
 	clear(e.spansPerLines)
 
 	lines := strings.Split(text, "\n")
@@ -641,8 +644,9 @@ func (e *Editor) SetText(text string, cursor [2]int) *Editor {
 
 	e.motionIndexes = make(map[rune][][3]int)
 	spansPerLines := append([][]span{}, e.spansPerLines...)
-	go e.buildMotionwIndexes(e.editCount.Load(), e.text, spansPerLines)
-	go e.buildMotioneIndexes(e.editCount.Load(), e.text, spansPerLines)
+	go e.buildMotionwIndexes(editCount, e.text, spansPerLines)
+	go e.buildMotioneIndexes(editCount, e.text, spansPerLines)
+	go e.buildMotionWIndexes(editCount, e.text, spansPerLines)
 
 	return e
 }
@@ -742,6 +746,47 @@ func (e *Editor) buildMotionwIndexes(editCount uint64, text string, spansPerLine
 	}
 	e.app.QueueUpdate(func() {
 		e.motionIndexes['w'] = indexes
+	})
+}
+
+func (e *Editor) buildMotionWIndexes(editCount uint64, text string, spansPerLines [][]span) {
+	var indexes [][3]int
+	for i, line := range strings.Split(text, "\n") {
+		if e.editCount.Load() > editCount {
+			return
+		}
+		if len(line) == 0 {
+			continue
+		}
+
+		bytesWidthSum := 0
+		for _, s := range spansPerLines[i] {
+			bytesWidthSum += s.bytesWidth
+		}
+		mapper := make([]int, bytesWidthSum)
+		mapperIdx := 0
+		for i, s := range spansPerLines[i] {
+			for j := range s.bytesWidth {
+				mapper[mapperIdx+j] = i
+			}
+			mapperIdx += s.bytesWidth
+		}
+
+		matches := rgMotionW.FindAllStringSubmatchIndex(line, -1)
+
+		for _, m := range matches {
+			if len(m) < 4 || m[2] >= m[3] {
+				continue
+			}
+
+			indexes = append(indexes, [3]int{i, mapper[m[2]], mapper[m[3]-1]})
+		}
+	}
+	if e.editCount.Load() > editCount {
+		return
+	}
+	e.app.QueueUpdate(func() {
+		e.motionIndexes['W'] = indexes
 	})
 }
 
@@ -1972,6 +2017,14 @@ func (e *Editor) GetEndOfWordCursor() [2]int {
 
 func (e *Editor) GetStartOfWordCursor() [2]int {
 	return e.GetNextMotionCursor('w', e.getActionCount())
+}
+
+func (e *Editor) GetStartOfBigWordCursor() [2]int {
+	return e.GetNextMotionCursor('W', e.getActionCount())
+}
+
+func (e *Editor) GetBackStartOfBigWordCursor() [2]int {
+	return e.GetPrevMotionCursor('W', e.getActionCount())
 }
 
 func (e *Editor) GetBackStartOfWordCursor() [2]int {
