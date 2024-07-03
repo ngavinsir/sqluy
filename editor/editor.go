@@ -1815,7 +1815,7 @@ func (e *Editor) Flash() [2]int {
 		e.ResetAction()
 	}
 	se.onTextChangedFunc = func(s string) {
-		if e.flashIndexes != nil {
+		if e.flashIndexes != nil && len(s) > 0 {
 			runes := []rune(s)
 			r := runes[len(runes)-1]
 			flash, hasFlash := e.flashIndexes[r]
@@ -1831,14 +1831,18 @@ func (e *Editor) Flash() [2]int {
 
 		e.flashIndexes = make(map[rune][2]int)
 		e.reverseFlashIndexes = make(map[[2]int]rune)
-		e.buildSearchIndexes('Z', regexp.QuoteMeta(s)+".", 0)
+		e.buildSearchIndexes('Z', regexp.QuoteMeta(s), 0)
 		if e.motionIndexes['Z'] == nil {
 			se.onExitFunc()
 			return
 		}
 		invalidFlash := make(map[rune]struct{})
 		for _, index := range e.motionIndexes['Z'] {
-			invalidFlash[e.spansPerLines[index[0]][index[2]].runes[0]] = struct{}{}
+			idx := index[2]
+			if idx >= len(e.spansPerLines[index[0]])-2 {
+				continue
+			}
+			invalidFlash[e.spansPerLines[index[0]][index[2]+1].runes[0]] = struct{}{}
 		}
 		flashIndexesClosestCursor := append([][3]int{}, e.motionIndexes['Z']...)
 		sort.Slice(flashIndexesClosestCursor, func(i, j int) bool {
@@ -2428,12 +2432,21 @@ func (e *Editor) flashDecorator(x, y, width, height int) {
 		}
 
 		for i := range idx[2] - idx[1] + 1 {
-			r, hasFlash := e.reverseFlashIndexes[[2]int{idx[0], idx[1]}]
-			if i == (idx[2]-idx[1]) && hasFlash {
-				e.decorations[[2]int{idx[0], idx[2]}] = decoration{style: style1, text: string(r)}
-				break
-			}
 			e.decorations[[2]int{idx[0], idx[1] + i}] = decoration{style: style2, text: ""}
+		}
+	}
+
+	for _, idx := range indexes {
+		if idx[0] < y {
+			continue
+		}
+		if idx[0] >= y+height {
+			break
+		}
+
+		r, hasFlash := e.reverseFlashIndexes[[2]int{idx[0], idx[1]}]
+		if hasFlash {
+			e.decorations[[2]int{idx[0], idx[2] + 1}] = decoration{style: style1, text: string(r)}
 		}
 	}
 }
