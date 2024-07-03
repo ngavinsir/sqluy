@@ -580,8 +580,8 @@ func New(km keymapper, app *tview.Application) *Editor {
 	}
 
 	e.decorators = []decorator{
-		e.visualDecorator,
 		e.searchDecorator,
+		e.visualDecorator,
 	}
 
 	return e
@@ -658,9 +658,9 @@ func (e *Editor) SetText(text string, cursor [2]int) *Editor {
 
 func (e *Editor) buildSearchIndexes(group rune, query string, offset int) bool {
 	if offset < 0 {
-		query = "[^" + query + "]" + query
+		query = "([^" + query + "])" + query
 	} else if offset > 0 {
-		query += "[^" + query + "]"
+		query += "([^" + query + "])"
 	}
 
 	foundMatches := false
@@ -688,12 +688,12 @@ func (e *Editor) buildSearchIndexes(group rune, query string, offset int) bool {
 		matches := rg.FindAllStringSubmatchIndex(line, -1)
 
 		for _, m := range matches {
-			if len(m) == 0 {
+			if len(m) < 4 {
 				continue
 			}
 
 			foundMatches = true
-			indexes = append(indexes, [3]int{i, mapper[m[0]], mapper[m[1]-1]})
+			indexes = append(indexes, [3]int{i, mapper[m[2]], mapper[m[2]]})
 		}
 	}
 
@@ -2281,7 +2281,8 @@ func (e *Editor) searchDecorator(x, y, width, height int) {
 		indexes = e.motionIndexes['n']
 	}
 
-	style := tcell.StyleDefault.Background(tview.Styles.MoreContrastBackgroundColor).Foreground(tview.Styles.PrimitiveBackgroundColor)
+	style1 := tcell.StyleDefault.Background(tview.Styles.ContrastBackgroundColor).Foreground(tview.Styles.PrimitiveBackgroundColor)
+	style2 := tcell.StyleDefault.Background(tview.Styles.MoreContrastBackgroundColor).Foreground(tview.Styles.PrimitiveBackgroundColor)
 	for _, idx := range indexes {
 		if idx[0] < y {
 			continue
@@ -2291,7 +2292,14 @@ func (e *Editor) searchDecorator(x, y, width, height int) {
 		}
 
 		for i := range idx[2] - idx[1] + 1 {
-			e.decorations[[2]int{idx[0], idx[1] + i}] = decoration{style: style, text: ""}
+			if i == 0 && (e.motionIndexes['t'] != nil || e.motionIndexes['T'] != nil) {
+				offset := -1
+				if e.motionIndexes['t'] != nil {
+					offset = 1
+				}
+				e.decorations[[2]int{idx[0], idx[1] + offset}] = decoration{style: style1, text: ""}
+			}
+			e.decorations[[2]int{idx[0], idx[1] + i}] = decoration{style: style2, text: ""}
 		}
 	}
 }
