@@ -44,44 +44,49 @@ type (
 	decorator func(x, y, width, height int)
 
 	Editor struct {
-		keymapper     keymapper
-		viewModalFunc func(string)
-		onDoneFunc    func(string)
-		delayDrawFunc func(time.Time)
-		app           *tview.Application
-		onExitFunc    func()
+		keymapper         keymapper
+		viewModalFunc     func(string)
+		onDoneFunc        func(string)
+		onTextChangedFunc func(string)
+		delayDrawFunc     func(time.Time)
+		app               *tview.Application
+		onExitFunc        func()
 		*tview.Box
-		searchEditor       *Editor
-		actionRunner       map[Action]func()
-		operatorRunner     map[Action]func(target [2]int)
-		motionRunner       map[Action]func() [2]int
-		runeRunner         map[Action]func(r rune)
-		motionIndexes      map[rune][][3]int
-		motionIndexesMutex *sync.RWMutex
-		decorations        map[[2]int]decoration
-		text               string
-		spansPerLines      [][]span
-		pending            []string
-		undoStack          []undoStackItem
-		decorators         []decorator
-		cursor             [2]int
-		visualStart        [2]int
-		offsets            [2]int
-		pendingCount       int
-		tabSize            int
-		editCount          atomic.Uint64
-		undoOffset         int
-		pendingAction      Action
-		lastMotion         Action
-		mode               mode
-		oneLineMode        bool
-		waitingForMotion   bool
-		yankOnVisual       bool // for yank indicator utilizng visual mode
+		searchEditor        *Editor
+		actionRunner        map[Action]func()
+		operatorRunner      map[Action]func(target [2]int)
+		motionRunner        map[Action]func() [2]int
+		runeRunner          map[Action]func(r rune)
+		motionIndexes       map[rune][][3]int
+		flashIndexes        map[rune][2]int
+		reverseFlashIndexes map[[2]int]rune
+		motionIndexesMutex  *sync.RWMutex
+		decorations         map[[2]int]decoration
+		text                string
+		spansPerLines       [][]span
+		pending             []string
+		undoStack           []undoStackItem
+		decorators          []decorator
+		cursor              [2]int
+		visualStart         [2]int
+		offsets             [2]int
+		pendingCount        int
+		tabSize             int
+		editCount           atomic.Uint64
+		undoOffset          int
+		pendingAction       Action
+		lastMotion          Action
+		mode                mode
+		oneLineMode         bool
+		waitingForMotion    bool
+		yankOnVisual        bool // for yank indicator utilizng visual mode
 	}
 )
 
 var (
 	asyncMotion = [2]int{-23, -57}
+
+	flashAlphabet = "ABCDEFGHJKLMNPQRTUVWXYabcdefghijkmnpqrtwxyz"
 
 	matchBlocks              = []rune{'{', '}', '[', ']', '(', ')', '"', '\'', '`'}
 	directionlessMatchBlocks = []rune{'"', '`', '\''}
@@ -554,6 +559,7 @@ func New(km keymapper, app *tview.Application) *Editor {
 		ActionMoveBackEndOfWord:      e.GetBackEndOfWordCursor,
 		ActionMoveBackStartOfWord:    e.GetBackStartOfWordCursor,
 		ActionEnableSearch:           e.EnableSearch,
+		ActionFlash:                  e.Flash,
 		ActionTil:                    e.GetTilCursor,
 		ActionTilBack:                e.GetTilBackCursor,
 		ActionFind:                   e.GetFindCursor,
@@ -582,6 +588,7 @@ func New(km keymapper, app *tview.Application) *Editor {
 	e.decorators = []decorator{
 		e.searchDecorator,
 		e.visualDecorator,
+		e.flashDecorator,
 	}
 
 	return e
@@ -606,6 +613,10 @@ func (e *Editor) SetDelayDrawFunc(f func(time.Time)) *Editor {
 }
 
 func (e *Editor) SetText(text string, cursor [2]int) *Editor {
+	if e.onTextChangedFunc != nil {
+		e.onTextChangedFunc(text)
+	}
+
 	editCount := e.editCount.Add(1)
 	clear(e.spansPerLines)
 
@@ -688,12 +699,19 @@ func (e *Editor) buildSearchIndexes(group rune, query string, offset int) bool {
 		matches := rg.FindAllStringSubmatchIndex(line, -1)
 
 		for _, m := range matches {
-			if len(m) < 4 {
+			if offset != 0 && len(m) < 4 {
+				continue
+			}
+			if offset == 0 && len(m) < 1 {
 				continue
 			}
 
 			foundMatches = true
-			indexes = append(indexes, [3]int{i, mapper[m[2]], mapper[m[2]]})
+			if offset != 0 {
+				indexes = append(indexes, [3]int{i, mapper[m[2]], mapper[m[2]]})
+			} else {
+				indexes = append(indexes, [3]int{i, mapper[m[0]], mapper[m[1]-1]})
+			}
 		}
 	}
 
@@ -1054,12 +1072,8 @@ func (e *Editor) Draw(screen tcell.Screen) {
 				}
 			}
 
-			if span.runes == nil {
-				break
-			}
-
 			// print original text
-			if runes[0] != '\t' {
+			if span.runes != nil && runes[0] != '\t' && d.text == "" {
 				bg := tview.Styles.PrimitiveBackgroundColor
 				fg := tview.Styles.PrimaryTextColor
 				if !e.oneLineMode && row == e.cursor[0] {
@@ -1076,6 +1090,14 @@ func (e *Editor) Draw(screen tcell.Screen) {
 					runes[1:],
 					tcell.StyleDefault.Foreground(fg).Background(bg),
 				)
+			}
+
+			// print decoration text
+			if hasDecoration && d.text != "" {
+				fg, _, _ := d.style.Decompose()
+				for i := range span.width {
+					tview.Print(screen, d.text, textX-e.offsets[1]+i, textY, span.width, tview.AlignLeft, fg)
+				}
 			}
 			textX += width
 		}
@@ -1781,6 +1803,91 @@ func (e *Editor) EnableSearch() [2]int {
 	return asyncMotion
 }
 
+func (e *Editor) Flash() [2]int {
+	x, y, w, h := e.Box.GetInnerRect()
+	se := New(e.keymapper, e.app).SetOneLineMode(true)
+	se.SetText("", [2]int{0, 0})
+	se.SetRect(x, y+h-1, w, 1)
+	se.SetDelayDrawFunc(e.delayDrawFunc)
+	se.mode = insert
+	se.onDoneFunc = func(s string) {
+		e.searchEditor = nil
+		e.ResetAction()
+	}
+	se.onTextChangedFunc = func(s string) {
+		if e.flashIndexes != nil {
+			runes := []rune(s)
+			r := runes[len(runes)-1]
+			flash, hasFlash := e.flashIndexes[r]
+			if hasFlash {
+				e.operatorRunner[e.pendingAction](flash)
+				e.searchEditor = nil
+				e.ResetAction()
+				e.flashIndexes = make(map[rune][2]int)
+				e.reverseFlashIndexes = make(map[[2]int]rune)
+				e.motionIndexes['Z'] = nil
+			}
+		}
+
+		e.flashIndexes = make(map[rune][2]int)
+		e.reverseFlashIndexes = make(map[[2]int]rune)
+		e.buildSearchIndexes('Z', regexp.QuoteMeta(s)+".", 0)
+		if e.motionIndexes['Z'] == nil {
+			se.onExitFunc()
+			return
+		}
+		invalidFlash := make(map[rune]struct{})
+		for _, index := range e.motionIndexes['Z'] {
+			invalidFlash[e.spansPerLines[index[0]][index[2]].runes[0]] = struct{}{}
+		}
+		flashIndexesClosestCursor := append([][3]int{}, e.motionIndexes['Z']...)
+		sort.Slice(flashIndexesClosestCursor, func(i, j int) bool {
+			xDistance1 := e.cursor[1] - flashIndexesClosestCursor[i][1]
+			if xDistance1 < 0 {
+				xDistance1 *= -1
+			}
+			yDistance1 := e.cursor[0] - flashIndexesClosestCursor[i][0]
+			if yDistance1 < 0 {
+				yDistance1 *= -1
+			}
+
+			xDistance2 := e.cursor[1] - flashIndexesClosestCursor[j][1]
+			if xDistance2 < 0 {
+				xDistance2 *= -1
+			}
+			yDistance2 := e.cursor[0] - flashIndexesClosestCursor[j][0]
+			if yDistance2 < 0 {
+				yDistance2 *= -1
+			}
+
+			return xDistance1+yDistance1 < xDistance2+yDistance2
+		})
+
+		i := 0
+		for _, r := range flashAlphabet {
+			if i > len(flashIndexesClosestCursor)-1 {
+				break
+			}
+			_, invalid := invalidFlash[r]
+			if invalid {
+				continue
+			}
+
+			c := [2]int{flashIndexesClosestCursor[i][0], flashIndexesClosestCursor[i][1]}
+			e.flashIndexes[r] = c
+			e.reverseFlashIndexes[c] = r
+			i++
+		}
+	}
+	se.onExitFunc = func() {
+		e.searchEditor = nil
+		e.ResetAction()
+	}
+	e.searchEditor = se
+	e.waitingForMotion = true
+	return asyncMotion
+}
+
 func (e *Editor) WaitingForMotion() [2]int {
 	e.waitingForMotion = true
 	return asyncMotion
@@ -2304,6 +2411,33 @@ func (e *Editor) searchDecorator(x, y, width, height int) {
 	}
 }
 
+func (e *Editor) flashDecorator(x, y, width, height int) {
+	if e.motionIndexes['Z'] == nil {
+		return
+	}
+
+	indexes := e.motionIndexes['Z']
+	style1 := tcell.StyleDefault.Background(tview.Styles.MoreContrastBackgroundColor).Foreground(tview.Styles.PrimitiveBackgroundColor)
+	style2 := tcell.StyleDefault.Background(tview.Styles.ContrastBackgroundColor).Foreground(tview.Styles.PrimitiveBackgroundColor)
+	for _, idx := range indexes {
+		if idx[0] < y {
+			continue
+		}
+		if idx[0] >= y+height {
+			break
+		}
+
+		for i := range idx[2] - idx[1] + 1 {
+			r, hasFlash := e.reverseFlashIndexes[[2]int{idx[0], idx[1]}]
+			if i == (idx[2]-idx[1]) && hasFlash {
+				e.decorations[[2]int{idx[0], idx[2]}] = decoration{style: style1, text: string(r)}
+				break
+			}
+			e.decorations[[2]int{idx[0], idx[1] + i}] = decoration{style: style2, text: ""}
+		}
+	}
+}
+
 func (e *Editor) visualDecorator(x, y, width, height int) {
 	if e.mode != visual && e.mode != vline {
 		return
@@ -2352,6 +2486,7 @@ func (e *Editor) ResetMotionIndexes() {
 	e.motionIndexes['t'] = nil
 	e.motionIndexes['T'] = nil
 	e.motionIndexes['f'] = nil
+	e.motionIndexes['Z'] = nil
 }
 
 func (e *Editor) ResetAction() {

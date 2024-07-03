@@ -154,6 +154,15 @@
     },
     {
       "keys": [
+        "s"
+      ],
+      "groups": [
+        "n"
+      ],
+      "action": "editor.flash"
+    },
+    {
+      "keys": [
         "i"
       ],
       "groups": [

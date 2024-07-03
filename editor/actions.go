@@ -50,6 +50,7 @@ const (
 	ActionMovePrevFind
 	ActionMoveMatchBlock
 	ActionSwitchVisualStart
+	ActionFlash
 	ActionVisual
 	ActionVisualLine
 	ActionTil
@@ -63,13 +64,13 @@ const (
 )
 
 var OperatorActions = []Action{ActionChange, ActionDelete, ActionYank, ActionVisual}
-var MotionActions = []Action{ActionMoveLeft, ActionMoveRight, ActionMoveUp, ActionMoveDown, ActionMoveEndOfLine, ActionMoveStartOfLine, ActionMoveFirstNonWhitespace,
+var MotionActions = []Action{ActionMoveLeft, ActionMoveRight, ActionMoveUp, ActionMoveDown, ActionMoveEndOfLine, ActionMoveStartOfLine, ActionMoveFirstNonWhitespace, ActionFlash,
 	ActionMoveLastLine, ActionMoveFirstLine, ActionMoveEndOfWord, ActionMoveStartOfWord, ActionMoveBackStartOfWord, ActionMoveBackEndOfWord, ActionEnableSearch, ActionTil,
 	ActionTilBack, ActionFind, ActionFindBack, ActionInside, ActionAround, ActionMoveStartOfBigWord, ActionMoveBackStartOfBigWord, ActionMoveEndOfBigWord, ActionMoveBackEndOfBigWord}
 var CountlessMotionActions = []Action{ActionMoveStartOfLine}
 var OperatorlessMotionActions = []Action{ActionMoveLeft, ActionMoveRight, ActionMoveUp, ActionMoveDown, ActionMoveEndOfLine, ActionMoveStartOfLine, ActionMoveFirstNonWhitespace,
 	ActionMoveLastLine, ActionMoveFirstLine, ActionMoveEndOfWord, ActionMoveStartOfWord, ActionMoveBackStartOfWord, ActionMoveBackEndOfWord, ActionEnableSearch, ActionTil,
-	ActionTilBack, ActionFind, ActionFindBack, ActionMoveStartOfBigWord, ActionMoveBackStartOfBigWord, ActionMoveEndOfBigWord, ActionMoveBackEndOfBigWord}
+	ActionTilBack, ActionFind, ActionFindBack, ActionMoveStartOfBigWord, ActionMoveBackStartOfBigWord, ActionMoveEndOfBigWord, ActionMoveBackEndOfBigWord, ActionFlash}
 var WaitingForRuneActions = []Action{ActionTil, ActionTilBack, ActionFind, ActionFindBack, ActionInside, ActionAround}
 
 var actionMapper = map[Action]string{
@@ -95,6 +96,7 @@ var actionMapper = map[Action]string{
 	ActionChangeUntilEndOfLine:   "change_until_end_of_line",
 	ActionInside:                 "inside",
 	ActionAround:                 "around",
+	ActionFlash:                  "flash",
 	ActionDeleteUntilEndOfLine:   "delete_until_end_of_line",
 	ActionDeleteLine:             "delete_line",
 	ActionReplace:                "replace",
