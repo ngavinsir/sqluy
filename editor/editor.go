@@ -41,7 +41,7 @@ type (
 		text  string
 	}
 
-	decorator func(row, col int) (decoration, bool)
+	decorator func(x, y, width, height int)
 
 	Editor struct {
 		keymapper     keymapper
@@ -58,6 +58,7 @@ type (
 		runeRunner         map[Action]func(r rune)
 		motionIndexes      map[rune][][3]int
 		motionIndexesMutex *sync.RWMutex
+		decorations        map[[2]int]decoration
 		text               string
 		spansPerLines      [][]span
 		pending            []string
@@ -119,10 +120,11 @@ func isAsyncMotion(c [2]int) bool {
 
 func New(km keymapper, app *tview.Application) *Editor {
 	e := &Editor{
-		tabSize:   4,
-		Box:       tview.NewBox(),
-		keymapper: km,
-		app:       app,
+		tabSize:     4,
+		Box:         tview.NewBox(),
+		keymapper:   km,
+		app:         app,
+		decorations: make(map[[2]int]decoration),
 	}
 	// e.SetText("amsok", [2]int{0, 0})
 	e.SetText(`
@@ -970,6 +972,12 @@ func (e *Editor) Draw(screen tcell.Screen) {
 	if lastLine > len(e.spansPerLines) {
 		lastLine = len(e.spansPerLines)
 	}
+
+	clear(e.decorations)
+	for _, decorator := range e.decorators {
+		decorator(x+lineNumberWidth, e.offsets[0], w, h)
+	}
+
 	for row, spans := range e.spansPerLines[e.offsets[0]:lastLine] {
 		row += e.offsets[0]
 
@@ -1031,7 +1039,7 @@ func (e *Editor) Draw(screen tcell.Screen) {
 				width = c
 			}
 
-			d, hasDecoration := e.getDecoration(row, col)
+			d, hasDecoration := e.decorations[[2]int{row, col}]
 			// print decoration bg
 			if hasDecoration {
 				_, bg, _ := d.style.Decompose()
@@ -1085,16 +1093,6 @@ func (e *Editor) Draw(screen tcell.Screen) {
 		screen.SetCursorStyle(cursorStyle)
 		screen.ShowCursor(cursorX+x+lineNumberWidth-e.offsets[1], e.cursor[0]+y-e.offsets[0])
 	}
-}
-
-func (e *Editor) getDecoration(row, col int) (decoration, bool) {
-	for _, d := range e.decorators {
-		dec, b := d(row, col)
-		if b {
-			return dec, true
-		}
-	}
-	return decoration{}, false
 }
 
 func (e *Editor) Focus(delegate func(p tview.Primitive)) {
@@ -2267,9 +2265,9 @@ func (e *Editor) GetMatchingBlock(from [2]int) [2]int {
 	return from
 }
 
-func (e *Editor) searchDecorator(row, col int) (decoration, bool) {
+func (e *Editor) searchDecorator(x, y, width, height int) {
 	if e.motionIndexes['n'] == nil && e.motionIndexes['t'] == nil && e.motionIndexes['T'] == nil && e.motionIndexes['f'] == nil {
-		return decoration{}, false
+		return
 	}
 
 	indexes := e.motionIndexes['t']
@@ -2285,21 +2283,22 @@ func (e *Editor) searchDecorator(row, col int) (decoration, bool) {
 
 	style := tcell.StyleDefault.Background(tview.Styles.MoreContrastBackgroundColor).Foreground(tview.Styles.PrimitiveBackgroundColor)
 	for _, idx := range indexes {
-		if idx[0] != row {
+		if idx[0] < y {
 			continue
 		}
+		if idx[0] >= y+height {
+			break
+		}
 
-		if col >= idx[1] && col <= idx[2] {
-			return decoration{style: style, text: ""}, true
+		for i := range idx[2] - idx[1] + 1 {
+			e.decorations[[2]int{idx[0], idx[1] + i}] = decoration{style: style, text: ""}
 		}
 	}
-
-	return decoration{}, false
 }
 
-func (e *Editor) visualDecorator(row, col int) (decoration, bool) {
+func (e *Editor) visualDecorator(x, y, width, height int) {
 	if e.mode != visual && e.mode != vline {
-		return decoration{}, false
+		return
 	}
 
 	from := e.visualStart
@@ -2309,16 +2308,35 @@ func (e *Editor) visualDecorator(row, col int) (decoration, bool) {
 	}
 
 	style := tcell.StyleDefault.Background(tview.Styles.MoreContrastBackgroundColor).Foreground(tview.Styles.PrimitiveBackgroundColor)
-	if (e.mode == visual &&
-		(row == from[0] && col >= from[1] && row == until[0] && col <= until[1]) ||
-		(row == from[0] && row < until[0] && col >= from[1]) ||
-		(row > from[0] && row < until[0]) || (row == until[0] && row > from[0] && col <= until[1])) ||
-		(e.mode == vline &&
-			(row >= from[0] && row <= until[0])) {
-		return decoration{style: style, text: ""}, true
-	}
+	for row := range until[0] - from[0] + 1 {
+		row += from[0]
+		lineWidth := 0
+		if row < y {
+			continue
+		}
+		if row >= y+height {
+			break
+		}
 
-	return decoration{}, false
+		for col, span := range e.spansPerLines[row] {
+			lineWidth += span.width
+			if lineWidth <= x {
+				continue
+			}
+			if lineWidth > width {
+				break
+			}
+
+			if (e.mode == visual &&
+				(row == from[0] && col >= from[1] && row == until[0] && col <= until[1]) ||
+				(row == from[0] && row < until[0] && col >= from[1]) ||
+				(row > from[0] && row < until[0]) || (row == until[0] && row > from[0] && col <= until[1])) ||
+				(e.mode == vline &&
+					(row >= from[0] && row <= until[0])) {
+				e.decorations[[2]int{row, col}] = decoration{style: style, text: ""}
+			}
+		}
+	}
 }
 
 func (e *Editor) ResetMotionIndexes() {
