@@ -86,7 +86,7 @@ type (
 var (
 	asyncMotion = [2]int{-23, -57}
 
-	flashAlphabet = "ABCDEFGHJKLMNPQRTUVWXYabcdefghijkmnpqrtwxyz"
+	flashAlphabet = "abcdefghijkmnpqrtwxyzABCDEFGHJKLMNPQRTUVWXY"
 
 	matchBlocks              = []rune{'{', '}', '[', ']', '(', ')', '"', '\'', '`'}
 	directionlessMatchBlocks = []rune{'"', '`', '\''}
@@ -1029,8 +1029,26 @@ func (e *Editor) Draw(screen tcell.Screen) {
 		}
 
 		for col, span := range spans {
-			// skip drawing end line sentinel
+			// draw end of line sentinel decoration if exist, else can break
 			if span.runes == nil && col > 0 {
+				d, hasDecoration := e.decorations[[2]int{row, col}]
+				if !hasDecoration {
+					break
+				}
+
+				// print bg
+				fg, bg, _ := d.style.Decompose()
+				screen.SetContent(
+					textX-e.offsets[1],
+					textY,
+					' ',
+					nil,
+					tcell.StyleDefault.Background(bg),
+				)
+
+				// print text
+				tview.Print(screen, d.text, textX-e.offsets[1], textY, w-textX-e.offsets[1]+1, tview.AlignLeft, fg)
+
 				break
 			}
 			// skip grapheme completely hidden on the left
@@ -1095,9 +1113,7 @@ func (e *Editor) Draw(screen tcell.Screen) {
 			// print decoration text
 			if hasDecoration && d.text != "" {
 				fg, _, _ := d.style.Decompose()
-				for i := range span.width {
-					tview.Print(screen, d.text, textX-e.offsets[1]+i, textY, span.width, tview.AlignLeft, fg)
-				}
+				tview.Print(screen, d.text, textX-e.offsets[1], textY, span.width, tview.AlignLeft, fg)
 			}
 			textX += width
 		}
@@ -1813,9 +1829,19 @@ func (e *Editor) Flash() [2]int {
 	se.onDoneFunc = func(s string) {
 		e.searchEditor = nil
 		e.ResetAction()
+		e.flashIndexes = make(map[rune][2]int)
+		e.reverseFlashIndexes = make(map[[2]int]rune)
+		e.motionIndexes['Z'] = nil
 	}
 	se.onTextChangedFunc = func(s string) {
-		if e.flashIndexes != nil && len(s) > 0 {
+		if len(s) < 1 {
+			e.flashIndexes = make(map[rune][2]int)
+			e.reverseFlashIndexes = make(map[[2]int]rune)
+			e.motionIndexes['Z'] = nil
+			return
+		}
+
+		if e.flashIndexes != nil && len(s) > e.flashIndexes['#'][0] {
 			runes := []rune(s)
 			r := runes[len(runes)-1]
 			flash, hasFlash := e.flashIndexes[r]
@@ -1831,6 +1857,8 @@ func (e *Editor) Flash() [2]int {
 
 		e.flashIndexes = make(map[rune][2]int)
 		e.reverseFlashIndexes = make(map[[2]int]rune)
+		// record last flash query len
+		e.flashIndexes['#'] = [2]int{len(s), 0}
 		e.buildSearchIndexes('Z', regexp.QuoteMeta(s), 0)
 		if e.motionIndexes['Z'] == nil {
 			se.onExitFunc()
@@ -1886,6 +1914,9 @@ func (e *Editor) Flash() [2]int {
 	se.onExitFunc = func() {
 		e.searchEditor = nil
 		e.ResetAction()
+		e.flashIndexes = make(map[rune][2]int)
+		e.reverseFlashIndexes = make(map[[2]int]rune)
+		e.motionIndexes['Z'] = nil
 	}
 	e.searchEditor = se
 	e.waitingForMotion = true
