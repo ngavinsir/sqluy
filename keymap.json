@@ -230,6 +230,31 @@
     },
     {
       "keys": [
+        "E"
+      ],
+      "groups": [
+        "n",
+        "v",
+        "ov",
+        "on"
+      ],
+      "action": "editor.move_end_of_big_word"
+    },
+    {
+      "keys": [
+        "g",
+        "E"
+      ],
+      "groups": [
+        "n",
+        "v",
+        "ov",
+        "on"
+      ],
+      "action": "editor.move_back_end_of_big_word"
+    },
+    {
+      "keys": [
         "W"
       ],
       "groups": [
