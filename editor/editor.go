@@ -45,7 +45,6 @@ type (
 
 	Editor struct {
 		keymapper     keymapper
-		screen        tcell.Screen
 		viewModalFunc func(string)
 		onDoneFunc    func(string)
 		delayDrawFunc func(time.Time)
@@ -888,15 +887,6 @@ func (e *Editor) buildMotioneIndexes(editCount uint64, text string, spansPerLine
 }
 
 func (e *Editor) Draw(screen tcell.Screen) {
-	defer func() {
-		if r := recover(); r != nil && e.screen != nil {
-			WriteFile(fmt.Sprintf("%+v", r))
-			e.screen.Fini()
-			panic(r)
-		}
-	}()
-
-	e.screen = screen
 	e.Box.DrawForSubclass(screen, e)
 
 	x, y, w, h := e.Box.GetInnerRect()
@@ -961,32 +951,11 @@ func (e *Editor) Draw(screen tcell.Screen) {
 			e.offsets[1] = 0
 		}
 	}
-	// print line numbers
+
+	lineNumberDigit := len(strconv.Itoa(len(e.spansPerLines)))
+	lineNumberWidth := 0
 	if !e.oneLineMode {
-		lineNumberDigit := len(strconv.Itoa(len(e.spansPerLines)))
-		lineNumberWidth := lineNumberDigit + 1
-		textY := y
-		lastLine := e.offsets[0] + h
-		if lastLine > len(e.spansPerLines) {
-			lastLine = len(e.spansPerLines)
-		}
-		for i := range e.spansPerLines[e.offsets[0]:lastLine] {
-			lineNumber := i + e.offsets[0] - e.cursor[0]
-			if lineNumber < 0 {
-				lineNumber *= -1
-			}
-			if e.cursor[0] == i+e.offsets[0] {
-				lineNumber = i + e.offsets[0] + 1
-			}
-			lineNumberText := fmt.Sprintf("%*d", lineNumberDigit, lineNumber)
-			lineNumberColor := tcell.ColorSlateGray
-			if i+e.offsets[0] == e.cursor[0] {
-				lineNumberColor = tcell.ColorOrange
-			}
-			tview.Print(screen, lineNumberText, x, textY, lineNumberWidth, tview.AlignLeft, lineNumberColor)
-			textY++
-		}
-		x += lineNumberWidth
+		lineNumberWidth = lineNumberDigit + 1
 		w -= lineNumberWidth
 	}
 
@@ -1006,9 +975,31 @@ func (e *Editor) Draw(screen tcell.Screen) {
 
 		// highlight current cursor line
 		if !e.oneLineMode && row == e.cursor[0] {
+			highlightWidth := w
+			if !e.oneLineMode {
+				highlightWidth += lineNumberWidth
+			}
 			for i := range w {
 				screen.SetContent(x+i, textY, ' ', nil, tcell.StyleDefault.Background(tcell.ColorGray).Foreground(tcell.ColorWhite))
 			}
+		}
+
+		// print line numbers
+		if !e.oneLineMode {
+			lineNumber := row - e.cursor[0]
+			if lineNumber < 0 {
+				lineNumber *= -1
+			}
+			if e.cursor[0] == row {
+				lineNumber = row + 1
+			}
+			lineNumberText := fmt.Sprintf("%*d", lineNumberDigit, lineNumber)
+			lineNumberColor := tcell.ColorSlateGray
+			if row == e.cursor[0] {
+				lineNumberColor = tcell.ColorOrange
+			}
+			tview.Print(screen, lineNumberText, x, textY, lineNumberWidth, tview.AlignLeft, lineNumberColor)
+			textX += lineNumberWidth
 		}
 
 		for col, span := range spans {
@@ -1092,7 +1083,7 @@ func (e *Editor) Draw(screen tcell.Screen) {
 			cursorStyle = tcell.CursorStyleSteadyUnderline
 		}
 		screen.SetCursorStyle(cursorStyle)
-		screen.ShowCursor(cursorX+x-e.offsets[1], e.cursor[0]+y-e.offsets[0])
+		screen.ShowCursor(cursorX+x+lineNumberWidth-e.offsets[1], e.cursor[0]+y-e.offsets[0])
 	}
 }
 
