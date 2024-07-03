@@ -1831,6 +1831,19 @@ func (e *Editor) buildSurroundIndexes(r rune, inside bool) {
 		return
 	}
 
+	if r == 'W' {
+		openingCursor, foundOpening := e.GetPrevMotionCursor('W', 1, e.cursor, true)
+		closingCursor, foundClosing := e.GetNextMotionCursor('E', 1, e.cursor, true)
+		if !foundOpening || !foundClosing {
+			return
+		}
+		e.motionIndexes['s'] = [][3]int{
+			{openingCursor[0], openingCursor[1], openingCursor[1]},
+			{closingCursor[0], closingCursor[1], closingCursor[1]},
+		}
+		return
+	}
+
 	if !slices.Contains(matchBlocks, r) {
 		return
 	}
