@@ -1,6 +1,8 @@
 package editor
 
 import (
+	"context"
+	_ "embed"
 	"fmt"
 	"os"
 	"regexp"
@@ -18,6 +20,8 @@ import (
 	"github.com/ngavinsir/sqluy/clipboard"
 	"github.com/rivo/tview"
 	"github.com/rivo/uniseg"
+	sitter "github.com/smacker/go-tree-sitter"
+	"github.com/smacker/go-tree-sitter/sql"
 )
 
 type (
@@ -62,6 +66,7 @@ type (
 		reverseFlashIndexes map[[2]int]rune
 		motionIndexesMutex  *sync.RWMutex
 		decorations         map[[2]int]decoration
+		highlightIndexes    map[[2]int]string
 		text                string
 		spansPerLines       [][]span
 		pending             []string
@@ -84,6 +89,9 @@ type (
 )
 
 var (
+	//go:embed sql.highlights.scm
+	sqlHighlightsQuery []byte
+
 	asyncMotion = [2]int{-23, -57}
 
 	flashAlphabet = "abcdefghijkmnpqrtwxyzABCDEFGHJKLMNPQRTUVWXY"
@@ -110,6 +118,21 @@ var (
 		'`':  '`',
 	}
 
+	colorMap = map[string]tcell.Color{
+		"variable":              tcell.NewHexColor(0xc0caf5),
+		"function.call":         tcell.NewHexColor(0x7aa2f7),
+		"keyword.operator":      tcell.NewHexColor(0x89ddff),
+		"keyword":               tcell.NewHexColor(0x9d7cd8),
+		"type":                  tcell.NewHexColor(0x2ac3de),
+		"variable.member":       tcell.NewHexColor(0x73daca),
+		"type.builtin":          tcell.NewHexColor(0x2ac3de),
+		"string":                tcell.NewHexColor(0x9ece6a),
+		"operator":              tcell.NewHexColor(0x89ddff),
+		"keyword.modifier":      tcell.NewHexColor(0x9d7cd8),
+		"punctuation.bracket":   tcell.NewHexColor(0xa9b1d6),
+		"punctuation.delimiter": tcell.NewHexColor(0x89ddff),
+	}
+
 	rgFirstNonWhitespace = regexp.MustCompile(`\S`)
 	rgMotioneOne         = regexp.MustCompile(`([^a-zA-Z0-9_À-ÿ\s])(?:[a-zA-Z0-9_À-ÿ\s]|$)`)
 	rgMotioneTwo         = regexp.MustCompile(`([a-zA-Z0-9_À-ÿ])(?:[^a-zA-Z0-9_À-ÿ]|$)`)
@@ -125,342 +148,51 @@ func isAsyncMotion(c [2]int) bool {
 
 func New(km keymapper, app *tview.Application) *Editor {
 	e := &Editor{
-		tabSize:     4,
-		Box:         tview.NewBox(),
-		keymapper:   km,
-		app:         app,
-		decorations: make(map[[2]int]decoration),
+		tabSize:          4,
+		Box:              tview.NewBox(),
+		keymapper:        km,
+		app:              app,
+		decorations:      make(map[[2]int]decoration),
+		highlightIndexes: make(map[[2]int]string),
 	}
 	// e.SetText("amsok", [2]int{0, 0})
-	e.SetText(`
-	package main
-
-	import (
-		"fmt"
-		"strconv"
-		"strings"
-
-		"github.com/gdamore/tcell/v2"
-		"github.com/rivo/tview"
-		"github.com/rivo/uniseg"
-	)
-
-	type (
-		span struct {
-			runes []rune
-			width int
-		}
-
-		Editor struct {
-			*tview.Box
-
-			text          string
-			spansPerLines [][]span
-			cursor        [2]int // row, grapheme index
-
-			offsets [2]int // row, column offsets
-
-			viewModalFunc func(string)
-		}
-	)
-
-	func NewEditor() *Editor {
-		e := &Editor{
-			Box: tview.NewBox().SetBorder(true).SetTitle("Editor"),
-		}
-		e.SetText("😊😊  😊 😊 😊 😊\ntest\nhalo ini siapa\namsok", [2]int{3, 0})
-		return e
-	}
-
-	func (e *Editor) SetText(text string, cursor [2]int) *Editor {
-		clear(e.spansPerLines)
-
-		lines := strings.Split(text, "\n")
-		e.spansPerLines = make([][]span, len(lines))
-		e.cursor = cursor
-		e.text = text
-
-		for i, line := range lines {
-			text = line
-			spans := make([]span, uniseg.GraphemeClusterCount(text)+1)
-			state := -1
-			cluster := ""
-			boundaries := 0
-			j := 0
-			for text != "" {
-				cluster, text, boundaries, state = uniseg.StepString(text, state)
-
-				span := span{
-					width: boundaries >> uniseg.ShiftWidth,
-					runes: []rune(cluster),
-				}
-				spans[j] = span
-				j++
-			}
-			spans[j] = span{runes: nil, width: 1}
-			e.spansPerLines[i] = spans
-		}
-		// panic(errors.New(fmt.Sprintf("%+v\n", e.spansPerLines[0])))
-
-		return e
-	}
-
-	func (e *Editor) Draw(screen tcell.Screen) {
-		e.Box.DrawForSubclass(screen, e)
-
-		x, y, w, h := e.Box.GetInnerRect()
-
-		// print line numbers
-		lineNumberDigit := len(strconv.Itoa(len(e.spansPerLines)))
-		lineNumberWidth := lineNumberDigit + 1
-		textY := y
-		lastLine := e.offsets[0] + h
-		if lastLine > len(e.spansPerLines) {
-			lastLine = len(e.spansPerLines)
-		}
-		for i, _ := range e.spansPerLines[e.offsets[0]:lastLine] {
-			lineNumberText := []rune(fmt.Sprintf("%*d", lineNumberDigit, i+e.offsets[0]+1))
-			screen.SetContent(x, textY, lineNumberText[0], lineNumberText[1:], tcell.StyleDefault.Foreground(tcell.ColorSlateGray))
-			screen.SetContent(x+lineNumberDigit, textY, []rune(" ")[0], nil, tcell.StyleDefault)
-			textY++
-		}
-		x += lineNumberWidth
-		w -= lineNumberWidth
-
-		// fix offsets position so the cursor is visible
-		// cursor is above row offset, set row offset to cursor row
-		if e.cursor[0] < e.offsets[0] {
-			e.offsets[0] = e.cursor[0]
-		}
-		// cursor is below row offset
-		if e.cursor[0] >= e.offsets[0]+h {
-			e.offsets[0] = e.cursor[0] - h + 1
-		}
-		// adjust offset so there's no empty line
-		if e.offsets[0]+h > len(e.spansPerLines) {
-			e.offsets[0] = len(e.spansPerLines) - h
-			if e.offsets[0] < 0 {
-				e.offsets[0] = 0
-			}
-		}
-
-		cursorX := 0
-		for _, span := range e.spansPerLines[e.cursor[0]][:e.cursor[1]] {
-			cursorX += span.width
-		}
-		// cursor is before column offset
-		if cursorX < e.offsets[1] {
-			e.offsets[1] = cursorX - 1
-			if e.offsets[1] < 0 {
-				e.offsets[1] = 0
-			}
-		}
-		// cursor is after column offset
-		if cursorX > e.offsets[1]+w {
-			e.offsets[1] = cursorX - w + 1
-		}
-
-		textX := x
-		textY = y
-		lastLine = e.offsets[0] + h
-		if lastLine > len(e.spansPerLines) {
-			lastLine = len(e.spansPerLines)
-		}
-		for _, spans := range e.spansPerLines[e.offsets[0]:lastLine] {
-			for _, span := range spans {
-				// skip drawing end line sentinel
-				if span.runes == nil {
-					break
-				}
-				// skip grapheme completely hidden on the left
-				if textX+span.width <= x+e.offsets[1] {
-					textX += span.width
-					continue
-				}
-				// skip grapheme completely hidden on the right
-				if textX >= x+e.offsets[1]+w {
-					break
-				}
-
-				runes := span.runes
-				width := span.width
-				// replace too wide grapheme on the left edge
-				if textX < x+e.offsets[1] && textX+width > x+e.offsets[1] {
-					c := textX + width - (x + e.offsets[1])
-					runes = []rune(strings.Repeat("<", c))
-					textX += width - c
-					width = c
-				} else if textX+width > x+e.offsets[1]+w { // too wide grapheme on the right edge
-					c := (x + e.offsets[1] + w) - textX
-					runes = []rune(strings.Repeat(">", c))
-					width = c
-				}
-				screen.SetContent(textX-e.offsets[1], textY, runes[0], runes[1:], tcell.StyleDefault.Foreground(tcell.ColorRed))
-				textX += width
-			}
-			textY++
-			textX = x
-		}
-
-		screen.SetCursorStyle(tcell.CursorStyleBlinkingBar)
-		screen.ShowCursor(cursorX+x-e.offsets[1], e.cursor[0]+y-e.offsets[0])
-	}
-
-	func (e *Editor) InputHandler() func(event *tcell.EventKey, setFocus func(p tview.Primitive)) {
-		return e.Box.WrapInputHandler(func(event *tcell.EventKey, setFocus func(p tview.Primitive)) {
-			switch key := event.Key(); key {
-			case tcell.KeyLeft:
-				e.MoveCursorLeft()
-				// e.viewModalFunc(strconv.Itoa(e.cameraGraphemeIndex))
-			case tcell.KeyRight:
-				e.MoveCursorRight()
-				// e.viewModalFunc(strconv.Itoa(e.cameraGraphemeIndex))
-			case tcell.KeyDown:
-				e.MoveCursorDown()
-				// e.viewModalFunc(strconv.Itoa(e.cameraGraphemeIndex))
-			case tcell.KeyUp:
-				e.MoveCursorUp()
-				// e.viewModalFunc(strconv.Itoa(e.cameraGraphemeIndex))
-			case tcell.KeyRune:
-				text := string(event.Rune())
-				e.ReplaceText(text, e.cursor, e.cursor)
-				e.MoveCursorRight()
-			case tcell.KeyEnter:
-				e.ReplaceText("\n", e.cursor, e.cursor)
-				e.MoveCursorDown()
-				e.cursor[1] = 0
-			case tcell.KeyBackspace, tcell.KeyBackspace2:
-				if e.cursor[0] == 0 && e.cursor[1] == 0 {
-					return
-				}
-
-				from := [2]int{e.cursor[0], e.cursor[1] - 1}
-				until := e.cursor
-				if e.cursor[1] == 0 {
-					aboveRow := e.cursor[0] - 1
-					from = [2]int{aboveRow, len(e.spansPerLines[aboveRow]) - 1}
-					until = [2]int{e.cursor[0], 0}
-				}
-				e.ReplaceText("", from, until)
-				e.cursor = from
-				// panic(errors.New(fmt.Sprintf("cursor: %+v\noffset: %+v\n", e.cursor, e.offsets)))
-			}
-		})
-	}
-
-	func (e *Editor) MoveCursorRight() {
-		if e.cursor[1] >= len(e.spansPerLines[e.cursor[0]])-1 {
-			return
-		}
-
-		e.cursor[1]++
-	}
-
-	func (e *Editor) MoveCursorLeft() {
-		if e.cursor[1] < 1 {
-			return
-		}
-
-		e.cursor[1]--
-	}
-
-	func (e *Editor) MoveCursorDown() {
-		if e.cursor[0] >= len(e.spansPerLines)-1 {
-			return
-		}
-
-		currentRowWidth := 0
-		for _, span := range e.spansPerLines[e.cursor[0]][:e.cursor[1]] {
-			currentRowWidth += span.width
-		}
-
-		belowRowX := 0
-		belowRowWidth := 0
-		for _, span := range e.spansPerLines[e.cursor[0]+1] {
-			if span.runes == nil {
-				break
-			}
-			if belowRowWidth+span.width > currentRowWidth {
-				break
-			}
-			belowRowX++
-			belowRowWidth += span.width
-		}
-
-		e.cursor[0]++
-		e.cursor[1] = belowRowX
-	}
-
-	func (e *Editor) MoveCursorUp() {
-		if e.cursor[0] < 1 {
-			return
-		}
-
-		currentRowWidth := 0
-		for _, span := range e.spansPerLines[e.cursor[0]][:e.cursor[1]] {
-			currentRowWidth += span.width
-		}
-
-		aboveRowX := 0
-		aboveRowWidth := 0
-		for _, span := range e.spansPerLines[e.cursor[0]-1] {
-			if span.runes == nil {
-				break
-			}
-			if aboveRowWidth+span.width > currentRowWidth {
-				break
-			}
-			aboveRowX++
-			aboveRowWidth += span.width
-		}
-
-		e.cursor[0]--
-		e.cursor[1] = aboveRowX
-	}
-
-	func (e *Editor) ReplaceText(s string, from, until [2]int) {
-		if from[0] > until[0] || from[0] == until[0] && from[1] > until[1] {
-			from, until = until, from
-		}
-
-		var b strings.Builder
-		lines := strings.Split(e.text, "\n")
-
-		// write left
-		for _, l := range lines[:from[0]] {
-			b.WriteString(l + "\n")
-		}
-
-		// write new text
-		// from row
-		for _, span := range e.spansPerLines[from[0]][:from[1]] {
-			b.WriteString(string(span.runes))
-		}
-		// new text
-		b.WriteString(s)
-		// until row
-		for _, span := range e.spansPerLines[until[0]][until[1]:] {
-			b.WriteString(string(span.runes))
-		}
-		if until[0] < len(lines)-1 {
-			b.WriteString("\n")
-		}
-
-		// write right
-		for i, l := range lines {
-			if i < until[0]+1 {
-				continue
-			}
-
-			b.WriteString(l)
-			if i < len(lines)-1 {
-				b.WriteString("\n")
-			}
-		}
-
-		e.SetText(b.String(), e.cursor)
-	}
-	    `, [2]int{3, 8})
+	e.SetText(`WITH RECURSIVE trip AS (
+  SELECT c.city_id AS start_city,
+    ARRAY[c.city_id] AS route,
+    cast(c.name AS varchar(100)) AS route_text,
+    c.city_id AS leg_start_city,
+    c.city_id AS leg_end_city,
+    0 AS trip_count,
+    0 AS leg_length,
+    0 AS total_length
+  FROM cities c
+UNION ALL
+  SELECT
+    trip.start_city,
+    trip.route || t.destination_city_id,
+    cast(trip.route_text || ',' || c.name AS varchar(100)),
+    t.departure_city_id,
+    t.destination_city_id,
+    trip.trip_count + 1,
+    d.distance,
+    trip.total_length + d.distance
+  FROM trains t
+  INNER JOIN trip
+    ON t.departure_city_id =  trip.leg_end_city
+  INNER JOIN citypairs cps
+    ON t.departure_city_id = cps.city_id
+  INNER JOIN citypairs cpe
+    ON t.destination_city_id = cpe.city_id AND
+       cpe.citypair_id = cps.citypair_id
+  INNER JOIN distances d
+    ON cps.citypair_id = d.citypair_id
+  INNER JOIN cities c
+     ON t.destination_city_id = c.city_id
+  WHERE NOT (array[t.destination_city_id] <@ trip.route))
+SELECT *
+FROM trip
+WHERE trip_count = 2
+AND start_city = (SELECT city_id FROM cities WHERE name = 'Edinburgh');`, [2]int{3, 8})
 
 	e.onExitFunc = func() {
 		e.mode = normal
@@ -619,6 +351,7 @@ func New(km keymapper, app *tview.Application) *Editor {
 	}
 
 	e.decorators = []decorator{
+		e.highlightDecorator,
 		e.searchDecorator,
 		e.visualDecorator,
 		e.flashDecorator,
@@ -660,6 +393,40 @@ func (e *Editor) SetText(text string, cursor [2]int) *Editor {
 	e.spansPerLines = make([][]span, len(lines))
 	e.cursor = cursor
 	e.text = text
+
+	parser := sitter.NewParser()
+	sqlLang := sql.GetLanguage()
+	parser.SetLanguage(sqlLang)
+	sourceCode := []byte(text)
+	tree, err := parser.ParseCtx(context.Background(), nil, sourceCode)
+	if err != nil {
+		panic(err)
+	}
+
+	q, _ := sitter.NewQuery(sqlHighlightsQuery, sqlLang)
+	qc := sitter.NewQueryCursor()
+	qc.Exec(q, tree.RootNode())
+	lastEnd := uint32(0)
+	// Iterate over query results
+	for {
+		m, ok := qc.NextMatch()
+		if !ok {
+			break
+		}
+		if m.Captures == nil {
+			continue
+		}
+		for _, c := range m.Captures {
+			if c.Node.StartByte() < lastEnd {
+				continue
+			}
+			lastEnd = c.Node.EndByte()
+			fmt.Println(q.CaptureNameForId(c.Index))
+			fmt.Println(c.Node.Content(sourceCode))
+			e.highlightIndexes[[2]int{int(c.Node.StartByte()), int(c.Node.EndByte())}] = q.CaptureNameForId(c.Index)
+		}
+	}
+	// panic(fmt.Sprintf("%+v\n", e.highlightIndexes))
 
 	for i, line := range lines {
 		text = line
@@ -1131,11 +898,11 @@ func (e *Editor) Draw(screen tcell.Screen) {
 			if span.runes != nil && runes[0] != '\t' && d.text == "" {
 				bg := tview.Styles.PrimitiveBackgroundColor
 				fg := tview.Styles.PrimaryTextColor
+				if hasDecoration && d.text == "" {
+					fg, _, _ = d.style.Decompose()
+				}
 				if !e.oneLineMode && row == e.cursor[0] {
 					bg = tcell.ColorGray
-				}
-				if hasDecoration && d.text == "" {
-					fg, bg, _ = d.style.Decompose()
 				}
 
 				screen.SetContent(
@@ -2559,6 +2326,36 @@ func (e *Editor) visualDecorator(x, y, width, height int) {
 			}
 		}
 	}
+}
+
+func (e *Editor) highlightDecorator(x, y, width, height int) {
+	byte := 0
+	byteMapper := make(map[int][2]int)
+	for row, spans := range e.spansPerLines {
+		for col, span := range spans {
+			for i := range span.bytesWidth {
+				byteMapper[byte+i] = [2]int{row, col}
+			}
+			byte += span.bytesWidth
+		}
+		byte += 1
+	}
+
+	for byteRange, kind := range e.highlightIndexes {
+		color, hasColor := colorMap[kind]
+		if !hasColor {
+			continue
+		}
+
+		for i := range byteRange[1] - byteRange[0] {
+			style := tcell.StyleDefault.Foreground(color)
+			if byteMapper[i+byteRange[0]] == [2]int{0, 0} {
+				// panic(fmt.Sprintf("%+v %+v %+v", i, byteRange, byteMapper[i+byteRange[0]]))
+			}
+			e.decorations[byteMapper[i+byteRange[0]]] = decoration{style: style, text: ""}
+		}
+	}
+	// panic(fmt.Sprintf("%+v\n", e.decorations[[2]int{0, 0}]))
 }
 
 func (e *Editor) ResetMotionIndexes() {
