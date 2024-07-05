@@ -118,19 +118,20 @@ var (
 		'`':  '`',
 	}
 
-	colorMap = map[string]tcell.Color{
-		"variable":              tcell.NewHexColor(0xc0caf5),
-		"function.call":         tcell.NewHexColor(0x7aa2f7),
-		"keyword.operator":      tcell.NewHexColor(0x89ddff),
-		"keyword":               tcell.NewHexColor(0x9d7cd8),
-		"type":                  tcell.NewHexColor(0x2ac3de),
-		"variable.member":       tcell.NewHexColor(0x73daca),
-		"type.builtin":          tcell.NewHexColor(0x2ac3de),
-		"string":                tcell.NewHexColor(0x9ece6a),
-		"operator":              tcell.NewHexColor(0x89ddff),
-		"keyword.modifier":      tcell.NewHexColor(0x9d7cd8),
-		"punctuation.bracket":   tcell.NewHexColor(0xa9b1d6),
-		"punctuation.delimiter": tcell.NewHexColor(0x89ddff),
+	colorMap = map[string]tcell.Style{
+		"variable":              tcell.StyleDefault.Foreground(tcell.NewHexColor(0xc0caf5)),
+		"function.call":         tcell.StyleDefault.Foreground(tcell.NewHexColor(0x7aa2f7)),
+		"keyword.operator":      tcell.StyleDefault.Foreground(tcell.NewHexColor(0x89ddff)),
+		"keyword":               tcell.StyleDefault.Foreground(tcell.NewHexColor(0x9d7cd8)),
+		"type":                  tcell.StyleDefault.Foreground(tcell.NewHexColor(0x2ac3de)),
+		"variable.member":       tcell.StyleDefault.Foreground(tcell.NewHexColor(0x73daca)),
+		"type.builtin":          tcell.StyleDefault.Foreground(tcell.NewHexColor(0x2ac3de)),
+		"string":                tcell.StyleDefault.Foreground(tcell.NewHexColor(0x9ece6a)),
+		"operator":              tcell.StyleDefault.Foreground(tcell.NewHexColor(0x89ddff)),
+		"keyword.modifier":      tcell.StyleDefault.Foreground(tcell.NewHexColor(0x9d7cd8)),
+		"punctuation.bracket":   tcell.StyleDefault.Foreground(tcell.NewHexColor(0xa9b1d6)),
+		"punctuation.delimiter": tcell.StyleDefault.Foreground(tcell.NewHexColor(0x89ddff)),
+		"error":                 tcell.StyleDefault.Underline(tcell.UnderlineStyleCurly, tcell.ColorRed),
 	}
 
 	rgFirstNonWhitespace = regexp.MustCompile(`\S`)
@@ -164,7 +165,7 @@ func New(km keymapper, app *tview.Application) *Editor {
     c.city_id AS leg_end_city,
     0 AS trip_count,
     0 AS leg_length,
-    0 AS total_length
+    0 AS total_length,
   FROM cities c
 UNION ALL
   SELECT
@@ -394,40 +395,6 @@ func (e *Editor) SetText(text string, cursor [2]int) *Editor {
 	e.cursor = cursor
 	e.text = text
 
-	parser := sitter.NewParser()
-	sqlLang := sql.GetLanguage()
-	parser.SetLanguage(sqlLang)
-	sourceCode := []byte(text)
-	tree, err := parser.ParseCtx(context.Background(), nil, sourceCode)
-	if err != nil {
-		panic(err)
-	}
-
-	q, _ := sitter.NewQuery(sqlHighlightsQuery, sqlLang)
-	qc := sitter.NewQueryCursor()
-	qc.Exec(q, tree.RootNode())
-	lastEnd := uint32(0)
-	// Iterate over query results
-	for {
-		m, ok := qc.NextMatch()
-		if !ok {
-			break
-		}
-		if m.Captures == nil {
-			continue
-		}
-		for _, c := range m.Captures {
-			if c.Node.StartByte() < lastEnd {
-				continue
-			}
-			lastEnd = c.Node.EndByte()
-			fmt.Println(q.CaptureNameForId(c.Index))
-			fmt.Println(c.Node.Content(sourceCode))
-			e.highlightIndexes[[2]int{int(c.Node.StartByte()), int(c.Node.EndByte())}] = q.CaptureNameForId(c.Index)
-		}
-	}
-	// panic(fmt.Sprintf("%+v\n", e.highlightIndexes))
-
 	for i, line := range lines {
 		text = line
 		spans := make([]span, uniseg.GraphemeClusterCount(text)+1)
@@ -458,13 +425,59 @@ func (e *Editor) SetText(text string, cursor [2]int) *Editor {
 	e.MoveCursorToLine(cursor[0])
 
 	e.motionIndexes = make(map[rune][][3]int)
+	e.highlightIndexes = make(map[[2]int]string)
 	spansPerLines := append([][]span{}, e.spansPerLines...)
 	go e.buildMotionwIndexes(editCount, e.text, spansPerLines)
 	go e.buildMotioneIndexes(editCount, e.text, spansPerLines)
 	go e.buildMotionWIndexes(editCount, e.text, spansPerLines)
 	go e.buildMotionEIndexes(editCount, e.text, spansPerLines)
 
+	if !e.oneLineMode {
+		e.buildTreesitter(e.text)
+	}
+
 	return e
+}
+
+func (e *Editor) buildTreesitter(text string) {
+	parser := sitter.NewParser()
+	sqlLang := sql.GetLanguage()
+	parser.SetLanguage(sqlLang)
+	sourceCode := []byte(text)
+	tree, err := parser.ParseCtx(context.Background(), nil, sourceCode)
+	if err != nil {
+		panic(err)
+	}
+
+	q, _ := sitter.NewQuery(sqlHighlightsQuery, sqlLang)
+	qc := sitter.NewQueryCursor()
+	qc.Exec(q, tree.RootNode())
+	lastEnd := uint32(0)
+	// Iterate over query results
+	for {
+		m, ok := qc.NextMatch()
+		if !ok {
+			break
+		}
+		if m.Captures == nil {
+			continue
+		}
+		for _, c := range m.Captures {
+			if c.Node.StartByte() < lastEnd {
+				continue
+			}
+			lastEnd = c.Node.EndByte()
+			e.highlightIndexes[[2]int{int(c.Node.StartByte()), int(c.Node.EndByte())}] = q.CaptureNameForId(c.Index)
+		}
+	}
+
+	i := sitter.NewIterator(tree.RootNode(), sitter.DFSMode)
+	i.ForEach(func(n *sitter.Node) error {
+		if n.IsError() {
+			e.highlightIndexes[[2]int{int(n.StartByte()), int(n.EndByte())}] = "error"
+		}
+		return nil
+	})
 }
 
 func (e *Editor) buildSearchIndexes(group rune, query string, offset, y, maxY int) bool {
@@ -797,7 +810,7 @@ func (e *Editor) Draw(screen tcell.Screen) {
 
 	clear(e.decorations)
 	for _, decorator := range e.decorators {
-		decorator(x+lineNumberWidth, e.offsets[0], w, h)
+		decorator(e.offsets[1], e.offsets[0], w, h)
 	}
 
 	for row, spans := range e.spansPerLines[e.offsets[0]:lastLine] {
@@ -841,13 +854,13 @@ func (e *Editor) Draw(screen tcell.Screen) {
 				}
 
 				// print bg
-				fg, bg, _ := d.style.Decompose()
+				fg, _, _ := d.style.Decompose()
 				screen.SetContent(
 					textX-e.offsets[1],
 					textY,
 					' ',
 					nil,
-					tcell.StyleDefault.Background(bg),
+					d.style,
 				)
 
 				// print text
@@ -896,13 +909,13 @@ func (e *Editor) Draw(screen tcell.Screen) {
 
 			// print original text
 			if span.runes != nil && runes[0] != '\t' && d.text == "" {
-				bg := tview.Styles.PrimitiveBackgroundColor
-				fg := tview.Styles.PrimaryTextColor
+				style := tcell.StyleDefault.Background(tview.Styles.PrimitiveBackgroundColor).Foreground(tview.Styles.PrimaryTextColor)
 				if hasDecoration && d.text == "" {
-					fg, _, _ = d.style.Decompose()
+					style = d.style
 				}
-				if !e.oneLineMode && row == e.cursor[0] {
-					bg = tcell.ColorGray
+				_, bg, _ := style.Decompose()
+				if !e.oneLineMode && row == e.cursor[0] && bg == tcell.ColorNone {
+					style = style.Background(tcell.ColorGray)
 				}
 
 				screen.SetContent(
@@ -910,7 +923,7 @@ func (e *Editor) Draw(screen tcell.Screen) {
 					textY,
 					runes[0],
 					runes[1:],
-					tcell.StyleDefault.Foreground(fg).Background(bg),
+					style,
 				)
 			}
 
@@ -2342,20 +2355,20 @@ func (e *Editor) highlightDecorator(x, y, width, height int) {
 	}
 
 	for byteRange, kind := range e.highlightIndexes {
-		color, hasColor := colorMap[kind]
-		if !hasColor {
+		style, hasStyle := colorMap[kind]
+		if !hasStyle {
 			continue
 		}
 
 		for i := range byteRange[1] - byteRange[0] {
-			style := tcell.StyleDefault.Foreground(color)
-			if byteMapper[i+byteRange[0]] == [2]int{0, 0} {
-				// panic(fmt.Sprintf("%+v %+v %+v", i, byteRange, byteMapper[i+byteRange[0]]))
+			c := byteMapper[i+byteRange[0]]
+			e.decorations[c] = decoration{style: style, text: ""}
+
+			if kind == "error" {
+				e.decorations[[2]int{c[0], len(e.spansPerLines[c[0]]) - 1}] = decoration{style: tcell.StyleDefault.Foreground(tcell.ColorRed).Underline(tcell.UnderlineStyleCurly, tcell.ColorRed), text: "     syntax error"}
 			}
-			e.decorations[byteMapper[i+byteRange[0]]] = decoration{style: style, text: ""}
 		}
 	}
-	// panic(fmt.Sprintf("%+v\n", e.decorations[[2]int{0, 0}]))
 }
 
 func (e *Editor) ResetMotionIndexes() {
