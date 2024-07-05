@@ -1894,7 +1894,6 @@ func (e *Editor) Flash() [2]int {
 		e.flashIndexes['#'] = [2]int{len(s), 0}
 		e.buildSearchIndexes('Z', regexp.QuoteMeta(s), 0)
 		if e.motionIndexes['Z'] == nil {
-			se.onExitFunc()
 			return
 		}
 		invalidFlash := make(map[rune]struct{})
