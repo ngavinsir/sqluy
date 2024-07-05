@@ -34,6 +34,8 @@ const (
 	ActionDeleteUntilEndOfLine
 	ActionDeleteLine
 	ActionReplace
+	ActionPasteAfter
+	ActionPasteBefore
 	ActionMoveLastLine
 	ActionMoveFirstLine
 	ActionMoveEndOfWord
@@ -100,6 +102,8 @@ var actionMapper = map[Action]string{
 	ActionDeleteUntilEndOfLine:   "delete_until_end_of_line",
 	ActionDeleteLine:             "delete_line",
 	ActionReplace:                "replace",
+	ActionPasteAfter:             "paste_after",
+	ActionPasteBefore:            "paste_before",
 	ActionMoveLastLine:           "move_last_line",
 	ActionMoveFirstLine:          "move_first_line",
 	ActionMoveEndOfWord:          "move_end_of_word",

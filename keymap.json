@@ -82,6 +82,26 @@
     },
     {
       "keys": [
+        "P"
+      ],
+      "groups": [
+        "n",
+        "on"
+      ],
+      "action": "editor.paste_before"
+    },
+    {
+      "keys": [
+        "p"
+      ],
+      "groups": [
+        "n",
+        "on"
+      ],
+      "action": "editor.paste_after"
+    },
+    {
+      "keys": [
         "enter"
       ],
       "groups": [

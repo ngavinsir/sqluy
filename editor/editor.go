@@ -489,6 +489,39 @@ func New(km keymapper, app *tview.Application) *Editor {
 				e.DeleteLine()
 			}
 		},
+		ActionPasteBefore: func() {
+			txt, _ := clipboard.Read()
+			if txt == "" {
+				return
+			}
+
+			hasNewLine := uniseg.HasTrailingLineBreakInString(txt)
+			if hasNewLine {
+				c := [2]int{e.cursor[0], 0}
+				e.ReplaceText(txt, c, c)
+			} else {
+				c := [2]int{e.cursor[0], e.cursor[1] - 1}
+				if c[1] < 0 {
+					c[1] = 0
+				}
+				e.ReplaceText(txt, c, c)
+			}
+		},
+		ActionPasteAfter: func() {
+			txt, _ := clipboard.Read()
+			if txt == "" {
+				return
+			}
+
+			hasNewLine := uniseg.HasTrailingLineBreakInString(txt)
+			if hasNewLine {
+				c := [2]int{e.cursor[0] + 1, 0}
+				e.ReplaceText(txt, c, c)
+			} else {
+				c := [2]int{e.cursor[0], e.cursor[1] + 1}
+				e.ReplaceText(txt, c, c)
+			}
+		},
 		ActionVisualLine: func() {
 			if e.mode == vline {
 				e.ChangeMode(normal)
@@ -2506,7 +2539,7 @@ func (e *Editor) visualDecorator(x, y, width, height int) {
 
 		for col, span := range e.spansPerLines[row] {
 			lineWidth += span.width
-			if lineWidth <= x {
+			if lineWidth < x {
 				continue
 			}
 			if lineWidth > width {
