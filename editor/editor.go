@@ -854,7 +854,13 @@ func (e *Editor) Draw(screen tcell.Screen) {
 				}
 
 				// print bg
-				fg, _, _ := d.style.Decompose()
+				fg, bg, _ := d.style.Decompose()
+				if bg == tcell.ColorDefault {
+					d.style = d.style.Background(tview.Styles.PrimitiveBackgroundColor)
+					if e.cursor[0] == row {
+						d.style = d.style.Background(tcell.ColorGray)
+					}
+				}
 				screen.SetContent(
 					textX-e.offsets[1],
 					textY,
@@ -896,6 +902,9 @@ func (e *Editor) Draw(screen tcell.Screen) {
 			// print decoration bg
 			if hasDecoration {
 				_, bg, _ := d.style.Decompose()
+				if !e.oneLineMode && row == e.cursor[0] && bg == tcell.ColorDefault {
+					bg = tcell.ColorGray
+				}
 				for i := range span.width {
 					screen.SetContent(
 						textX-e.offsets[1]+i,
@@ -908,23 +917,39 @@ func (e *Editor) Draw(screen tcell.Screen) {
 			}
 
 			// print original text
-			if span.runes != nil && runes[0] != '\t' && d.text == "" {
+			if d.text == "" {
+				dBg := tcell.ColorDefault
 				style := tcell.StyleDefault.Background(tview.Styles.PrimitiveBackgroundColor).Foreground(tview.Styles.PrimaryTextColor)
 				if hasDecoration && d.text == "" {
+					_, dBg, _ := d.style.Decompose()
 					style = d.style
+					if dBg == tcell.ColorDefault {
+						style = style.Background(tview.Styles.PrimitiveBackgroundColor)
+					}
 				}
-				_, bg, _ := style.Decompose()
-				if !e.oneLineMode && row == e.cursor[0] && bg == tcell.ColorNone {
+				if !e.oneLineMode && row == e.cursor[0] && dBg == tcell.ColorDefault {
 					style = style.Background(tcell.ColorGray)
 				}
 
-				screen.SetContent(
-					textX-e.offsets[1],
-					textY,
-					runes[0],
-					runes[1:],
-					style,
-				)
+				if runes[0] != '\t' {
+					screen.SetContent(
+						textX-e.offsets[1],
+						textY,
+						runes[0],
+						runes[1:],
+						style,
+					)
+				} else {
+					for i := range e.tabSize {
+						screen.SetContent(
+							textX-e.offsets[1]+i,
+							textY,
+							' ',
+							nil,
+							style,
+						)
+					}
+				}
 			}
 
 			// print decoration text
