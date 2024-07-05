@@ -700,7 +700,7 @@ func (e *Editor) SetText(text string, cursor [2]int) *Editor {
 	return e
 }
 
-func (e *Editor) buildSearchIndexes(group rune, query string, offset int) bool {
+func (e *Editor) buildSearchIndexes(group rune, query string, offset, y, maxY int) bool {
 	if offset < 0 {
 		query = "([^" + query + "])" + query
 	} else if offset > 0 {
@@ -711,7 +711,11 @@ func (e *Editor) buildSearchIndexes(group rune, query string, offset int) bool {
 	rg := regexp.MustCompile(query)
 
 	var indexes [][3]int
-	for i, line := range strings.Split(e.text, "\n") {
+	textPerLines := strings.Split(e.text, "\n")
+	if maxY <= 0 || maxY > len(textPerLines) {
+		maxY = len(textPerLines)
+	}
+	for i, line := range textPerLines[y:maxY] {
 		if len(line) == 0 {
 			continue
 		}
@@ -1838,7 +1842,7 @@ func (e *Editor) EnableSearch() [2]int {
 	se.SetDelayDrawFunc(e.delayDrawFunc)
 	se.mode = insert
 	se.onDoneFunc = func(s string) {
-		e.buildSearchIndexes('n', regexp.QuoteMeta(s), 0)
+		e.buildSearchIndexes('n', regexp.QuoteMeta(s), 0, 0, 0)
 		e.operatorRunner[e.pendingAction](e.GetSearchCursor())
 		e.searchEditor = nil
 		e.ResetAction()
@@ -1892,7 +1896,7 @@ func (e *Editor) Flash() [2]int {
 		e.reverseFlashIndexes = make(map[[2]int]rune)
 		// record last flash query len
 		e.flashIndexes['#'] = [2]int{len(s), 0}
-		e.buildSearchIndexes('Z', regexp.QuoteMeta(s), 0)
+		e.buildSearchIndexes('Z', regexp.QuoteMeta(s), 0, e.offsets[0], e.offsets[0]+h-1)
 		if e.motionIndexes['Z'] == nil {
 			return
 		}
@@ -1961,15 +1965,15 @@ func (e *Editor) WaitingForMotion() [2]int {
 }
 
 func (e *Editor) AcceptRuneTil(r rune) {
-	e.buildSearchIndexes('t', regexp.QuoteMeta(string(r)), -1)
+	e.buildSearchIndexes('t', regexp.QuoteMeta(string(r)), -1, 0, 0)
 }
 
 func (e *Editor) AcceptRuneTilBack(r rune) {
-	e.buildSearchIndexes('T', regexp.QuoteMeta(string(r)), 1)
+	e.buildSearchIndexes('T', regexp.QuoteMeta(string(r)), 1, 0, 0)
 }
 
 func (e *Editor) AcceptRuneFind(r rune) {
-	e.buildSearchIndexes('f', regexp.QuoteMeta(string(r)), 0)
+	e.buildSearchIndexes('f', regexp.QuoteMeta(string(r)), 0, 0, 0)
 }
 
 func (e *Editor) AcceptRuneInside(r rune) {
@@ -2014,7 +2018,7 @@ func (e *Editor) buildSurroundIndexes(r rune, inside bool) {
 	if !slices.Contains(directionlessMatchBlocks, r) && matchBlockDirection[r] < 0 {
 		r = matchingBlock[r]
 	}
-	e.buildSearchIndexes('s', regexp.QuoteMeta(string(r)), 0)
+	e.buildSearchIndexes('s', regexp.QuoteMeta(string(r)), 0, 0, 0)
 	if e.motionIndexes['s'] == nil {
 		return
 	}
@@ -2422,7 +2426,7 @@ func (e *Editor) GetMatchingBlock(from [2]int) [2]int {
 		return from
 	}
 
-	e.buildSearchIndexes(r, string(r), 0)
+	e.buildSearchIndexes(r, string(r), 0, 0, 0)
 	for i, index := range e.motionIndexes[r] {
 		if index[0] == from[0] && index[1] == from[1] {
 			target := i + 1
