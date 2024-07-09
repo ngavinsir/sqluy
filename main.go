@@ -41,8 +41,8 @@ func main() {
 	e.SetDelayDrawFunc(func(t time.Time) {
 		delayDrawChan <- t
 	})
-	// flex := tview.NewFlex().
-	// 	AddItem(e, 0, 1, true)
+	flex := tview.NewFlex().
+		AddItem(e, 0, 1, true)
 	modal := tview.NewModal().AddButtons([]string{"Ok"})
 	modalFlex := tview.NewFlex().
 		AddItem(nil, 0, 1, false).
@@ -53,7 +53,7 @@ func main() {
 			0, 1, false).
 		AddItem(nil, 0, 1, false)
 
-	page.AddPage("main", e, true, true)
+	page.AddPage("main", flex, true, true)
 	page.AddPage("modal", modalFlex, true, false)
 	page.SetRect(0, 0, 15, 8)
 

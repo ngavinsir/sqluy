@@ -150,7 +150,7 @@ func isAsyncMotion(c [2]int) bool {
 func New(km keymapper, app *tview.Application) *Editor {
 	e := &Editor{
 		tabSize:          4,
-		Box:              tview.NewBox(),
+		Box:              tview.NewBox().SetBorder(true).SetTitle("Editor").SetTitleAlign(tview.AlignLeft),
 		keymapper:        km,
 		app:              app,
 		decorations:      make(map[[2]int]decoration),
@@ -793,7 +793,6 @@ func (e *Editor) Draw(screen tcell.Screen) {
 	lineNumberWidth := 0
 	if !e.oneLineMode {
 		lineNumberWidth = lineNumberDigit + 1
-		w -= lineNumberWidth
 	}
 
 	// cursor is after column offset
