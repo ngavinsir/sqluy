@@ -55,7 +55,7 @@ func main() {
 		AddItem(nil, 0, 1, false)
 
 	page.AddPage("main", flex, true, false)
-	page.AddPage("data_viewer", dataviewer.New(), true, true)
+	page.AddPage("data_viewer", dataviewer.New(app), true, true)
 	page.AddPage("modal", modalFlex, true, false)
 	page.SetRect(0, 0, 15, 8)
 

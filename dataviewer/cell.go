@@ -12,17 +12,20 @@ type (
 		text       string
 		textColor  tcell.Color
 		bgColor    tcell.Color
-		isFirstRow bool
+		topPadding int
 	}
 )
 
-func NewCell(text string, isFirstRow bool, textColor, bgColor, borderColor tcell.Color) *Cell {
+func NewCell(text string, x, y, w, h, topPadding int, textColor, bgColor, borderColor tcell.Color) *Cell {
+	box := tview.NewBox().SetBorder(true).SetBorderColor(borderColor).SetBackgroundColor(bgColor)
+	box.SetRect(x, y, w, h+topPadding)
+
 	return &Cell{
-		Box:        tview.NewBox().SetBorder(true).SetBorderColor(borderColor).SetBackgroundColor(bgColor),
+		Box:        box,
 		text:       text,
 		textColor:  textColor,
 		bgColor:    bgColor,
-		isFirstRow: isFirstRow,
+		topPadding: topPadding,
 	}
 }
 
@@ -33,8 +36,8 @@ func (c *Cell) Draw(screen tcell.Screen) {
 
 	textX := x
 	textY := y
-	if c.isFirstRow {
-		textY++
+	if c.topPadding > 0 {
+		textY += c.topPadding
 	}
 	state := -1
 	s := c.text

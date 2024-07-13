@@ -4,6 +4,7 @@ import (
 	_ "embed"
 	"encoding/json"
 	"fmt"
+	"time"
 
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
@@ -27,7 +28,7 @@ type (
 //go:embed sample.json
 var sampleItems []byte
 
-func New() *Dataviewer {
+func New(app *tview.Application) *Dataviewer {
 	var items []map[string]any
 	err := json.Unmarshal(sampleItems, &items)
 	if err != nil {
@@ -45,14 +46,33 @@ func New() *Dataviewer {
 		headers = append(headers, k)
 	}
 
-	return &Dataviewer{
+	d := &Dataviewer{
 		Box:         tview.NewBox(),
 		headers:     []string{"university", "birthDate", "firstName", "lastName"},
 		rows:        items[:13],
 		bgColor:     tview.Styles.PrimitiveBackgroundColor,
 		borderColor: tcell.ColorGray,
 		textColor:   tcell.ColorWhite,
+		cursor:      [2]int{13, 2},
 	}
+
+	go func() {
+		for {
+			time.Sleep(3 * time.Second)
+			app.QueueUpdateDraw(func() {
+				d.cursor[1]++
+				if d.cursor[1] > len(d.headers)-1 {
+					d.cursor[0]++
+					d.cursor[1] = 0
+				}
+				if d.cursor[0] > len(d.rows) {
+					d.cursor[0] = 1
+				}
+			})
+		}
+	}()
+
+	return d
 }
 
 func (d *Dataviewer) Draw(screen tcell.Screen) {
@@ -77,25 +97,10 @@ func (d *Dataviewer) Draw(screen tcell.Screen) {
 			}
 
 			colWidth := d.getColWidth(header)
-			c := NewCell(fmt.Sprintf("%+v", v), i == 0, d.textColor, d.bgColor, d.borderColor)
-			c.SetRect(textX, textY, colWidth+2, 3+firstRowOffset)
-			c.Draw(screen)
-
-			// top left junction
-			if j > 0 {
-				screen.SetContent(textX, textY, tview.Borders.Cross, nil, tcell.StyleDefault.Foreground(d.borderColor).Background(d.bgColor))
+			if d.cursor == [2]int{i + 1, j} {
+				defer d.drawCell(screen, i, j, textX, textY, colWidth, 3, firstRowOffset, v)
 			} else {
-				screen.SetContent(textX, textY, tview.Borders.LeftT, nil, tcell.StyleDefault.Foreground(d.borderColor).Background(d.bgColor))
-			}
-
-			// bottom left juction
-			if i >= len(d.rows)-1 && j > 0 {
-				screen.SetContent(textX, textY+2, tview.Borders.BottomT, nil, tcell.StyleDefault.Foreground(d.borderColor).Background(d.bgColor))
-			}
-
-			// top right junction
-			if j >= len(d.headers)-1 {
-				screen.SetContent(textX+colWidth+1, textY, tview.Borders.RightT, nil, tcell.StyleDefault.Foreground(d.borderColor).Background(d.bgColor))
+				d.drawCell(screen, i, j, textX, textY, colWidth, 3, firstRowOffset, v)
 			}
 			textX += colWidth + 1
 		}
@@ -107,8 +112,7 @@ func (d *Dataviewer) Draw(screen tcell.Screen) {
 	textY = y
 	for i, header := range d.headers {
 		colWidth := d.getColWidth(header)
-		c := NewCell(header, false, d.bgColor, d.textColor, d.borderColor)
-		c.SetRect(textX, textY, colWidth+2, 3)
+		c := NewCell(header, textX, textY, colWidth+2, 3, 0, d.bgColor, d.textColor, d.borderColor)
 		c.Draw(screen)
 
 		// top left and bottom left junction
@@ -134,4 +138,60 @@ func (d *Dataviewer) getColWidth(header string) int {
 		}
 	}
 	return maxWidth
+}
+
+func (d *Dataviewer) drawCell(screen tcell.Screen, i, j, x, y, colWidth, height, topPadding int, content any) {
+	textColor := d.textColor
+	borderColor := d.borderColor
+	bgColor := d.bgColor
+	if d.cursor == [2]int{i + 1, j} {
+		textColor = tcell.ColorBlack
+		borderColor = tcell.ColorBlack
+		bgColor = tcell.ColorYellow
+	}
+	c := NewCell(fmt.Sprintf("%+v", content), x, y, colWidth+2, height, topPadding, textColor, bgColor, borderColor)
+	c.Draw(screen)
+
+	// top left junction
+	if j > 0 {
+		screen.SetContent(x, y, tview.Borders.Cross, nil, tcell.StyleDefault.Foreground(borderColor).Background(bgColor))
+	} else {
+		screen.SetContent(x, y, tview.Borders.LeftT, nil, tcell.StyleDefault.Foreground(borderColor).Background(bgColor))
+	}
+
+	// top right junction
+	if j >= len(d.headers)-1 {
+		screen.SetContent(x+colWidth+1, y, tview.Borders.RightT, nil, tcell.StyleDefault.Foreground(borderColor).Background(bgColor))
+	} else {
+		screen.SetContent(x+colWidth+1, y, tview.Borders.Cross, nil, tcell.StyleDefault.Foreground(borderColor).Background(bgColor))
+	}
+
+	// bottom left juction
+	if i >= len(d.rows)-1 && j > 0 {
+		screen.SetContent(x, y+2+topPadding, tview.Borders.BottomT, nil, tcell.StyleDefault.Foreground(borderColor).Background(bgColor))
+	} else if j > 0 {
+		screen.SetContent(x, y+2+topPadding, tview.Borders.Cross, nil, tcell.StyleDefault.Foreground(borderColor).Background(bgColor))
+	} else if i >= len(d.rows)-1 {
+		screen.SetContent(x, y+2+topPadding, tview.Borders.BottomLeft, nil, tcell.StyleDefault.Foreground(borderColor).Background(bgColor))
+	} else {
+		screen.SetContent(x, y+2+topPadding, tview.Borders.LeftT, nil, tcell.StyleDefault.Foreground(borderColor).Background(bgColor))
+	}
+
+	// top right junction
+	if j >= len(d.headers)-1 {
+		screen.SetContent(x+colWidth+1, y, tview.Borders.RightT, nil, tcell.StyleDefault.Foreground(borderColor).Background(bgColor))
+	} else {
+		screen.SetContent(x+colWidth+1, y, tview.Borders.Cross, nil, tcell.StyleDefault.Foreground(borderColor).Background(bgColor))
+	}
+
+	// bottom right junction
+	if i >= len(d.rows)-1 && j < len(d.headers)-1 {
+		screen.SetContent(x+colWidth+1, y+2+topPadding, tview.Borders.BottomT, nil, tcell.StyleDefault.Foreground(borderColor).Background(bgColor))
+	} else if j < len(d.headers)-1 {
+		screen.SetContent(x+colWidth+1, y+2+topPadding, tview.Borders.Cross, nil, tcell.StyleDefault.Foreground(borderColor).Background(bgColor))
+	} else if i >= len(d.rows)-1 {
+		screen.SetContent(x+colWidth+1, y+2+topPadding, tview.Borders.BottomRight, nil, tcell.StyleDefault.Foreground(borderColor).Background(bgColor))
+	} else {
+		screen.SetContent(x+colWidth+1, y+2+topPadding, tview.Borders.RightT, nil, tcell.StyleDefault.Foreground(borderColor).Background(bgColor))
+	}
 }
