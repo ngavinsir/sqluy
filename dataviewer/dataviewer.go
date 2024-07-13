@@ -66,7 +66,7 @@ func New(app *tview.Application) *Dataviewer {
 					d.cursor[1] = 0
 				}
 				if d.cursor[0] > len(d.rows) {
-					d.cursor[0] = 1
+					d.cursor[0] = 0
 				}
 			})
 		}
@@ -112,13 +112,11 @@ func (d *Dataviewer) Draw(screen tcell.Screen) {
 	textY = y
 	for i, header := range d.headers {
 		colWidth := d.getColWidth(header)
-		c := NewCell(header, textX, textY, colWidth+2, 3, 0, d.bgColor, d.textColor, d.borderColor)
-		c.Draw(screen)
 
-		// top left and bottom left junction
-		if i > 0 {
-			screen.SetContent(textX, textY, tview.Borders.TopT, nil, tcell.StyleDefault.Foreground(d.borderColor).Background(d.textColor))
-			screen.SetContent(textX, textY+2, tview.Borders.BottomT, nil, tcell.StyleDefault.Foreground(d.borderColor).Background(d.textColor))
+		if d.cursor == [2]int{0, i} {
+			defer d.drawHeader(screen, i, textX, textY, colWidth, 3, header)
+		} else {
+			d.drawHeader(screen, i, textX, textY, colWidth, 3, header)
 		}
 
 		textX += colWidth + 1
@@ -193,5 +191,46 @@ func (d *Dataviewer) drawCell(screen tcell.Screen, i, j, x, y, colWidth, height,
 		screen.SetContent(x+colWidth+1, y+2+topPadding, tview.Borders.BottomRight, nil, tcell.StyleDefault.Foreground(borderColor).Background(bgColor))
 	} else {
 		screen.SetContent(x+colWidth+1, y+2+topPadding, tview.Borders.RightT, nil, tcell.StyleDefault.Foreground(borderColor).Background(bgColor))
+	}
+}
+
+func (d *Dataviewer) drawHeader(screen tcell.Screen, i, x, y, colWidth, height int, header string) {
+	textColor := d.bgColor
+	borderColor := d.borderColor
+	bgColor := d.textColor
+	if d.cursor == [2]int{0, i} {
+		textColor = tcell.ColorBlack
+		borderColor = tcell.ColorBlack
+		bgColor = tcell.ColorYellow
+	}
+	c := NewCell(header, x, y, colWidth+2, height, 0, textColor, bgColor, borderColor)
+	c.Draw(screen)
+
+	// top left junction
+	if i > 0 {
+		screen.SetContent(x, y, tview.Borders.TopT, nil, tcell.StyleDefault.Foreground(borderColor).Background(bgColor))
+	} else {
+		screen.SetContent(x, y, tview.Borders.TopLeft, nil, tcell.StyleDefault.Foreground(borderColor).Background(bgColor))
+	}
+
+	// top right junction
+	if i >= len(d.headers)-1 {
+		screen.SetContent(x+colWidth+1, y, tview.Borders.TopRight, nil, tcell.StyleDefault.Foreground(borderColor).Background(bgColor))
+	} else {
+		screen.SetContent(x+colWidth+1, y, tview.Borders.TopT, nil, tcell.StyleDefault.Foreground(borderColor).Background(bgColor))
+	}
+
+	// bottom left junction
+	if i > 0 {
+		screen.SetContent(x, y+2, tview.Borders.BottomT, nil, tcell.StyleDefault.Foreground(borderColor).Background(bgColor))
+	} else {
+		screen.SetContent(x, y+2, tview.Borders.BottomLeft, nil, tcell.StyleDefault.Foreground(borderColor).Background(bgColor))
+	}
+
+	// bottom right junction
+	if i >= len(d.headers)-1 {
+		screen.SetContent(x+colWidth+1, y+2, tview.Borders.BottomRight, nil, tcell.StyleDefault.Foreground(borderColor).Background(bgColor))
+	} else {
+		screen.SetContent(x+colWidth+1, y+2, tview.Borders.BottomT, nil, tcell.StyleDefault.Foreground(borderColor).Background(bgColor))
 	}
 }
