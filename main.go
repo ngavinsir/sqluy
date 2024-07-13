@@ -59,12 +59,12 @@ func main() {
 	page.AddPage("main", flex, true, false)
 	page.AddPage("data_viewer", d, true, true)
 	page.AddPage("modal", modalFlex, true, false)
-	page.SetRect(0, 0, 51, 27)
+	page.SetRect(0, 0, 81, 47)
 
 	wg.Add(2)
 	go modalLoop(ctx, modalChan, page, modal, app, &wg)
 	go delayDrawLoop(ctx, &wg, delayDrawChan, app)
-	err := app.SetRoot(page, true).Run()
+	err := app.SetRoot(page, false).Run()
 	cancel()
 	wg.Wait()
 

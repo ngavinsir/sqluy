@@ -49,18 +49,18 @@ func New(app *tview.Application) *Dataviewer {
 
 	d := &Dataviewer{
 		Box:         tview.NewBox().SetBorder(true).SetTitle("Dataviewer").SetTitleAlign(tview.AlignLeft),
-		headers:     []string{"university", "birthDate", "firstName", "lastName"},
-		rows:        items[:13],
+		headers:     headers,
+		rows:        items[:30],
 		bgColor:     tview.Styles.PrimitiveBackgroundColor,
 		borderColor: tcell.ColorGray,
 		textColor:   tcell.ColorWhite,
-		cursor:      [2]int{3, 0},
-		offsets:     [2]int{0, 0},
+		cursor:      [2]int{3, 25},
+		offsets:     [2]int{0, 23},
 	}
 
 	go func() {
 		for {
-			time.Sleep(500 * time.Millisecond)
+			time.Sleep(900 * time.Millisecond)
 			app.QueueUpdateDraw(func() {
 				d.cursor[1]++
 				if d.cursor[1] > len(d.headers)-1 {
@@ -101,7 +101,7 @@ rightOffset:
 	for d.offsets[1] < d.cursor[1] {
 		for i, h := range d.headers[d.offsets[1] : d.cursor[1]+1] {
 			colWidth := d.getColTextWidth(h)
-			if width+colWidth+1 > x+w+1 {
+			if width+colWidth+1 >= x+w {
 				d.offsets[1]++
 				width = x
 				break
