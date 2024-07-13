@@ -60,7 +60,7 @@ func New(app *tview.Application) *Dataviewer {
 
 	go func() {
 		for {
-			time.Sleep(3 * time.Second)
+			time.Sleep(500 * time.Millisecond)
 			app.QueueUpdateDraw(func() {
 				d.cursor[1]++
 				if d.cursor[1] > len(d.headers)-1 {
@@ -103,6 +103,7 @@ rightOffset:
 			colWidth := d.getColTextWidth(h)
 			if width+colWidth+1 > x+w+1 {
 				d.offsets[1]++
+				width = x
 				break
 			}
 			if i >= d.cursor[1]-d.offsets[1] {
@@ -112,9 +113,50 @@ rightOffset:
 		}
 	}
 
-	for i, r := range d.rows {
+	// adjust offset if cursor hidden on the top
+	if d.cursor[0] < d.offsets[0] {
+		d.offsets[0] = d.cursor[0]
+	}
+
+	// adjust offset if cursor hidden on the bottom
+	height := y + d.getHeaderHeight() + 2
+	// return early if box height is too short
+	if height >= y+h {
+		return
+	}
+bottomOffset:
+	for d.offsets[0] < d.cursor[0] {
+		for i, r := range d.rows[d.offsets[0] : d.cursor[0]+1] {
+			// measure max text height on the row
+			textHeight := 1
+			for _, header := range d.headers {
+				v, ok := r[header]
+				if !ok {
+					continue
+				}
+				text := fmt.Sprintf("%+v", v)
+				th := d.getTextHeight(text, w-2)
+				if th > textHeight {
+					textHeight = th
+				}
+			}
+
+			if height+textHeight+1 > y+h+1 {
+				d.offsets[0]++
+				height = y + d.getHeaderHeight() + 2
+				break
+			}
+			if i >= d.cursor[0]-d.offsets[0] {
+				break bottomOffset
+			}
+			height += textHeight + 1
+		}
+	}
+
+	for i, r := range d.rows[d.offsets[0]:] {
+		i += d.offsets[0]
 		firstRowOffset := 0
-		if i == 0 {
+		if i == d.offsets[0] {
 			firstRowOffset = 1
 		}
 
@@ -163,15 +205,7 @@ rightOffset:
 
 	// header
 	textY = y
-
-	// measure max text height on the row
-	textHeight := 1
-	for _, header := range d.headers {
-		th := d.getTextHeight(header, w-2)
-		if th > textHeight {
-			textHeight = th
-		}
-	}
+	headerHeight := d.getHeaderHeight()
 
 	for i, header := range d.headers {
 		if i < d.offsets[1] {
@@ -184,9 +218,9 @@ rightOffset:
 		colWidth := d.getColWidth(header)
 
 		if d.cursor == [2]int{0, i} {
-			defer d.drawHeader(screen, i, textX, textY, colWidth, 2+textHeight, header)
+			defer d.drawHeader(screen, i, textX, textY, colWidth, 2+headerHeight, header)
 		} else {
-			d.drawHeader(screen, i, textX, textY, colWidth, 2+textHeight, header)
+			d.drawHeader(screen, i, textX, textY, colWidth, 2+headerHeight, header)
 		}
 
 		textX += colWidth + 1
@@ -262,6 +296,18 @@ func (d *Dataviewer) getColWidth(header string) int {
 	}
 
 	return colWidth
+}
+
+func (d *Dataviewer) getHeaderHeight() int {
+	_, _, w, _ := d.Box.GetInnerRect()
+	textHeight := 1
+	for _, header := range d.headers {
+		th := d.getTextHeight(header, w-2)
+		if th > textHeight {
+			textHeight = th
+		}
+	}
+	return textHeight
 }
 
 func (d *Dataviewer) drawCell(screen tcell.Screen, i, j, x, y, colWidth, height, topPadding int, content string) {
