@@ -47,13 +47,14 @@ func New(app *tview.Application) *Dataviewer {
 	}
 
 	d := &Dataviewer{
-		Box:         tview.NewBox(),
+		Box:         tview.NewBox().SetBorder(true).SetTitle("Dataviewer").SetTitleAlign(tview.AlignLeft),
 		headers:     []string{"university", "birthDate", "firstName", "lastName"},
 		rows:        items[:13],
 		bgColor:     tview.Styles.PrimitiveBackgroundColor,
 		borderColor: tcell.ColorGray,
 		textColor:   tcell.ColorWhite,
-		cursor:      [2]int{13, 2},
+		cursor:      [2]int{3, 0},
+		offsets:     [2]int{0, 0},
 	}
 
 	go func() {
@@ -78,11 +79,37 @@ func New(app *tview.Application) *Dataviewer {
 func (d *Dataviewer) Draw(screen tcell.Screen) {
 	d.Box.DrawForSubclass(screen, d)
 
-	x, y, _, _ := d.Box.GetInnerRect()
+	x, y, w, h := d.Box.GetInnerRect()
 	textX := x
 	textY := y
 	textY += 2
 	textX = x
+	defer func() {
+		tview.Print(screen, fmt.Sprintf("%+v", d.offsets), x, y+h, 10, tview.AlignLeft, tcell.ColorWhite)
+		tview.Print(screen, fmt.Sprintf("%+v", d.cursor), x, y+h+1, 10, tview.AlignLeft, tcell.ColorWhite)
+	}()
+
+	// adjust offset if cursor hidden on the left
+	if d.cursor[1] < d.offsets[1] {
+		d.offsets[1] = d.cursor[1]
+	}
+
+	// adjust offset if cursor hidden on the right
+	width := x
+rightOffset:
+	for d.offsets[1] < d.cursor[1] {
+		for i, h := range d.headers[d.offsets[1] : d.cursor[1]+1] {
+			colWidth := d.getColWidth(h)
+			if width+colWidth+1 > x+w+1 {
+				d.offsets[1]++
+				break
+			}
+			if i >= d.cursor[1]-d.offsets[1] {
+				break rightOffset
+			}
+			width += colWidth + 1
+		}
+	}
 
 	for i, r := range d.rows {
 		firstRowOffset := 0
@@ -90,13 +117,29 @@ func (d *Dataviewer) Draw(screen tcell.Screen) {
 			firstRowOffset = 1
 		}
 
+		if textY+2+firstRowOffset >= y+h {
+			break
+		}
+
 		for j, header := range d.headers {
+			if j < d.offsets[1] {
+				continue
+			}
+			if textX >= x+w-1 {
+				break
+			}
+
 			v, ok := r[header]
 			if !ok {
 				continue
 			}
 
 			colWidth := d.getColWidth(header)
+			// if the next header width is too wide, extend the current header width until the edge
+			if j < len(d.headers)-1 && textX+colWidth+1+d.getColWidth(d.headers[j+1])+1 >= x+w {
+				colWidth = w - textX - 1
+			}
+
 			if d.cursor == [2]int{i + 1, j} {
 				defer d.drawCell(screen, i, j, textX, textY, colWidth, 3, firstRowOffset, v)
 			} else {
@@ -111,7 +154,18 @@ func (d *Dataviewer) Draw(screen tcell.Screen) {
 	// header
 	textY = y
 	for i, header := range d.headers {
+		if i < d.offsets[1] {
+			continue
+		}
+		if textX >= x+w-1 {
+			break
+		}
+
 		colWidth := d.getColWidth(header)
+		// if the next header width is too wide, extend the current header width until the edge
+		if i < len(d.headers)-1 && textX+colWidth+1+d.getColWidth(d.headers[i+1])+1 >= x+w {
+			colWidth = w - textX - 1
+		}
 
 		if d.cursor == [2]int{0, i} {
 			defer d.drawHeader(screen, i, textX, textY, colWidth, 3, header)

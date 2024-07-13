@@ -54,10 +54,12 @@ func main() {
 			0, 1, false).
 		AddItem(nil, 0, 1, false)
 
+	d := dataviewer.New(app)
+
 	page.AddPage("main", flex, true, false)
-	page.AddPage("data_viewer", dataviewer.New(app), true, true)
+	page.AddPage("data_viewer", d, true, true)
 	page.AddPage("modal", modalFlex, true, false)
-	page.SetRect(0, 0, 15, 8)
+	page.SetRect(0, 0, 65, 28)
 
 	wg.Add(2)
 	go modalLoop(ctx, modalChan, page, modal, app, &wg)
