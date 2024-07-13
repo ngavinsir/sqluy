@@ -10,15 +10,17 @@ type (
 	Cell struct {
 		*tview.Box
 		text      string
-		textStyle tcell.Style
+		textColor tcell.Color
+		bgColor   tcell.Color
 	}
 )
 
-func NewCell(text string, textStyle tcell.Style) *Cell {
+func NewCell(text string, textColor, bgColor, borderColor tcell.Color) *Cell {
 	return &Cell{
-		Box:       tview.NewBox().SetBorder(true),
+		Box:       tview.NewBox().SetBorder(true).SetBorderColor(borderColor).SetBackgroundColor(bgColor),
 		text:      text,
-		textStyle: textStyle,
+		textColor: textColor,
+		bgColor:   bgColor,
 	}
 }
 
@@ -45,7 +47,7 @@ func (c *Cell) Draw(screen tcell.Screen) {
 		}
 
 		runes := []rune(cluster)
-		screen.SetContent(textX, textY, runes[0], runes[1:], c.textStyle)
+		screen.SetContent(textX, textY, runes[0], runes[1:], tcell.StyleDefault.Foreground(c.textColor).Background(c.bgColor))
 		textX += textWidth
 	}
 }
