@@ -100,7 +100,7 @@ func (d *Dataviewer) Draw(screen tcell.Screen) {
 rightOffset:
 	for d.offsets[1] < d.cursor[1] {
 		for i, h := range d.headers[d.offsets[1] : d.cursor[1]+1] {
-			colWidth := d.getColWidth(h)
+			colWidth := d.getColTextWidth(h)
 			if width+colWidth+1 > x+w+1 {
 				d.offsets[1]++
 				break
@@ -122,6 +122,7 @@ rightOffset:
 			break
 		}
 
+		textHeight := 1
 		for j, header := range d.headers[d.offsets[1]:] {
 			j += d.offsets[1]
 			if textX >= x+w-1 {
@@ -132,17 +133,19 @@ rightOffset:
 			if !ok {
 				continue
 			}
+			text := fmt.Sprintf("%+v", v)
 
 			colWidth := d.getColWidth(header)
+			textHeight = d.getTextHeight(text, colWidth)
 
 			if d.cursor == [2]int{i + 1, j} {
-				defer d.drawCell(screen, i, j, textX, textY, colWidth, 3, firstRowOffset, v)
+				defer d.drawCell(screen, i, j, textX, textY, colWidth, 2+textHeight, firstRowOffset, text)
 			} else {
-				d.drawCell(screen, i, j, textX, textY, colWidth, 3, firstRowOffset, v)
+				d.drawCell(screen, i, j, textX, textY, colWidth, 2+textHeight, firstRowOffset, text)
 			}
 			textX += colWidth + 1
 		}
-		textY += 2 + firstRowOffset
+		textY += 1 + textHeight + firstRowOffset
 		textX = x
 	}
 
@@ -183,6 +186,26 @@ func (d *Dataviewer) getColTextWidth(header string) int {
 	return maxWidth
 }
 
+func (d *Dataviewer) getTextHeight(text string, w int) int {
+	textX := 0
+	textY := 0
+
+	state := -1
+	s := text
+	boundaries := 0
+	for s != "" {
+		_, s, boundaries, state = uniseg.StepString(s, state)
+		textWidth := boundaries >> uniseg.ShiftWidth
+		if textX+textWidth > w {
+			textY++
+			textX = 0
+			continue
+		}
+		textX += textWidth
+	}
+	return textY + 1
+}
+
 func (d *Dataviewer) getColWidth(header string) int {
 	i := slices.Index(d.headers, header)
 	x, _, w, _ := d.Box.GetInnerRect()
@@ -206,7 +229,7 @@ func (d *Dataviewer) getColWidth(header string) int {
 	if emptyHorizontalSpace > 0 && !isLastCol {
 		colWidth += emptyHorizontalSpace / (len(d.headers) - d.offsets[1])
 	} else {
-		colWidth += emptyHorizontalSpace - (emptyHorizontalSpace/(len(d.headers)-d.offsets[1]))*(len(d.headers)-d.offsets[1]-1)
+		colWidth += emptyHorizontalSpace - (emptyHorizontalSpace/(len(d.headers)-d.offsets[1]))*(len(d.headers)-d.offsets[1]-1) - 1
 	}
 
 	// if the next header width is too wide, extend the current header width until the edge
@@ -218,7 +241,7 @@ func (d *Dataviewer) getColWidth(header string) int {
 	return colWidth
 }
 
-func (d *Dataviewer) drawCell(screen tcell.Screen, i, j, x, y, colWidth, height, topPadding int, content any) {
+func (d *Dataviewer) drawCell(screen tcell.Screen, i, j, x, y, colWidth, height, topPadding int, content string) {
 	textColor := d.textColor
 	borderColor := d.borderColor
 	bgColor := d.bgColor
@@ -227,7 +250,7 @@ func (d *Dataviewer) drawCell(screen tcell.Screen, i, j, x, y, colWidth, height,
 		borderColor = tcell.ColorBlack
 		bgColor = tcell.ColorYellow
 	}
-	c := NewCell(fmt.Sprintf("%+v", content), x, y, colWidth+2, height, topPadding, textColor, bgColor, borderColor)
+	c := NewCell(content, x, y, colWidth+2, height, topPadding, textColor, bgColor, borderColor)
 	c.Draw(screen)
 
 	// top left junction
@@ -246,13 +269,13 @@ func (d *Dataviewer) drawCell(screen tcell.Screen, i, j, x, y, colWidth, height,
 
 	// bottom left juction
 	if i >= len(d.rows)-1 && j > 0 {
-		screen.SetContent(x, y+2+topPadding, tview.Borders.BottomT, nil, tcell.StyleDefault.Foreground(borderColor).Background(bgColor))
+		screen.SetContent(x, y-1+height+topPadding, tview.Borders.BottomT, nil, tcell.StyleDefault.Foreground(borderColor).Background(bgColor))
 	} else if j > 0 {
-		screen.SetContent(x, y+2+topPadding, tview.Borders.Cross, nil, tcell.StyleDefault.Foreground(borderColor).Background(bgColor))
+		screen.SetContent(x, y-1+height+topPadding, tview.Borders.Cross, nil, tcell.StyleDefault.Foreground(borderColor).Background(bgColor))
 	} else if i >= len(d.rows)-1 {
-		screen.SetContent(x, y+2+topPadding, tview.Borders.BottomLeft, nil, tcell.StyleDefault.Foreground(borderColor).Background(bgColor))
+		screen.SetContent(x, y-1+height+topPadding, tview.Borders.BottomLeft, nil, tcell.StyleDefault.Foreground(borderColor).Background(bgColor))
 	} else {
-		screen.SetContent(x, y+2+topPadding, tview.Borders.LeftT, nil, tcell.StyleDefault.Foreground(borderColor).Background(bgColor))
+		screen.SetContent(x, y-1+height+topPadding, tview.Borders.LeftT, nil, tcell.StyleDefault.Foreground(borderColor).Background(bgColor))
 	}
 
 	// top right junction
@@ -264,13 +287,13 @@ func (d *Dataviewer) drawCell(screen tcell.Screen, i, j, x, y, colWidth, height,
 
 	// bottom right junction
 	if i >= len(d.rows)-1 && j < len(d.headers)-1 {
-		screen.SetContent(x+colWidth+1, y+2+topPadding, tview.Borders.BottomT, nil, tcell.StyleDefault.Foreground(borderColor).Background(bgColor))
+		screen.SetContent(x+colWidth+1, y-1+height+topPadding, tview.Borders.BottomT, nil, tcell.StyleDefault.Foreground(borderColor).Background(bgColor))
 	} else if j < len(d.headers)-1 {
-		screen.SetContent(x+colWidth+1, y+2+topPadding, tview.Borders.Cross, nil, tcell.StyleDefault.Foreground(borderColor).Background(bgColor))
+		screen.SetContent(x+colWidth+1, y-1+height+topPadding, tview.Borders.Cross, nil, tcell.StyleDefault.Foreground(borderColor).Background(bgColor))
 	} else if i >= len(d.rows)-1 {
-		screen.SetContent(x+colWidth+1, y+2+topPadding, tview.Borders.BottomRight, nil, tcell.StyleDefault.Foreground(borderColor).Background(bgColor))
+		screen.SetContent(x+colWidth+1, y-1+height+topPadding, tview.Borders.BottomRight, nil, tcell.StyleDefault.Foreground(borderColor).Background(bgColor))
 	} else {
-		screen.SetContent(x+colWidth+1, y+2+topPadding, tview.Borders.RightT, nil, tcell.StyleDefault.Foreground(borderColor).Background(bgColor))
+		screen.SetContent(x+colWidth+1, y-1+height+topPadding, tview.Borders.RightT, nil, tcell.StyleDefault.Foreground(borderColor).Background(bgColor))
 	}
 }
 
