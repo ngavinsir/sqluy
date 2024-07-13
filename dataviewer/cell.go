@@ -9,18 +9,20 @@ import (
 type (
 	Cell struct {
 		*tview.Box
-		text      string
-		textColor tcell.Color
-		bgColor   tcell.Color
+		text       string
+		textColor  tcell.Color
+		bgColor    tcell.Color
+		isFirstRow bool
 	}
 )
 
-func NewCell(text string, textColor, bgColor, borderColor tcell.Color) *Cell {
+func NewCell(text string, isFirstRow bool, textColor, bgColor, borderColor tcell.Color) *Cell {
 	return &Cell{
-		Box:       tview.NewBox().SetBorder(true).SetBorderColor(borderColor).SetBackgroundColor(bgColor),
-		text:      text,
-		textColor: textColor,
-		bgColor:   bgColor,
+		Box:        tview.NewBox().SetBorder(true).SetBorderColor(borderColor).SetBackgroundColor(bgColor),
+		text:       text,
+		textColor:  textColor,
+		bgColor:    bgColor,
+		isFirstRow: isFirstRow,
 	}
 }
 
@@ -31,6 +33,9 @@ func (c *Cell) Draw(screen tcell.Screen) {
 
 	textX := x
 	textY := y
+	if c.isFirstRow {
+		textY++
+	}
 	state := -1
 	s := c.text
 	boundaries := 0

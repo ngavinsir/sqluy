@@ -18,6 +18,9 @@ type (
 		bgColor     tcell.Color
 		borderColor tcell.Color
 		textColor   tcell.Color
+
+		cursor  [2]int
+		offsets [2]int
 	}
 )
 
@@ -44,7 +47,7 @@ func New() *Dataviewer {
 
 	return &Dataviewer{
 		Box:         tview.NewBox(),
-		headers:     []string{"university", "birthDate", "lastName"},
+		headers:     []string{"university", "birthDate", "firstName", "lastName"},
 		rows:        items[:13],
 		bgColor:     tview.Styles.PrimitiveBackgroundColor,
 		borderColor: tcell.ColorGray,
@@ -58,23 +61,15 @@ func (d *Dataviewer) Draw(screen tcell.Screen) {
 	x, y, _, _ := d.Box.GetInnerRect()
 	textX := x
 	textY := y
-	for i, header := range d.headers {
-		colWidth := d.getColWidth(header)
-		c := NewCell(header, d.textColor, d.bgColor, d.borderColor)
-		c.SetRect(textX, textY, colWidth+2, 3)
-		c.Draw(screen)
-
-		// top left junction
-		if i > 0 {
-			screen.SetContent(textX, textY, tview.Borders.TopT, nil, tcell.StyleDefault.Foreground(d.borderColor).Background(d.bgColor))
-		}
-
-		textX += colWidth + 1
-	}
 	textY += 2
 	textX = x
 
 	for i, r := range d.rows {
+		firstRowOffset := 0
+		if i == 0 {
+			firstRowOffset = 1
+		}
+
 		for j, header := range d.headers {
 			v, ok := r[header]
 			if !ok {
@@ -82,8 +77,8 @@ func (d *Dataviewer) Draw(screen tcell.Screen) {
 			}
 
 			colWidth := d.getColWidth(header)
-			c := NewCell(fmt.Sprintf("%+v", v), d.textColor, d.bgColor, d.borderColor)
-			c.SetRect(textX, textY, colWidth+2, 3)
+			c := NewCell(fmt.Sprintf("%+v", v), i == 0, d.textColor, d.bgColor, d.borderColor)
+			c.SetRect(textX, textY, colWidth+2, 3+firstRowOffset)
 			c.Draw(screen)
 
 			// top left junction
@@ -104,8 +99,25 @@ func (d *Dataviewer) Draw(screen tcell.Screen) {
 			}
 			textX += colWidth + 1
 		}
-		textY += 2
+		textY += 2 + firstRowOffset
 		textX = x
+	}
+
+	// header
+	textY = y
+	for i, header := range d.headers {
+		colWidth := d.getColWidth(header)
+		c := NewCell(header, false, d.bgColor, d.textColor, d.borderColor)
+		c.SetRect(textX, textY, colWidth+2, 3)
+		c.Draw(screen)
+
+		// top left and bottom left junction
+		if i > 0 {
+			screen.SetContent(textX, textY, tview.Borders.TopT, nil, tcell.StyleDefault.Foreground(d.borderColor).Background(d.textColor))
+			screen.SetContent(textX, textY+2, tview.Borders.BottomT, nil, tcell.StyleDefault.Foreground(d.borderColor).Background(d.textColor))
+		}
+
+		textX += colWidth + 1
 	}
 }
 
