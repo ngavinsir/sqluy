@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/gdamore/tcell/v2"
+	"github.com/ngavinsir/sqluy/dataviewer"
 	"github.com/ngavinsir/sqluy/editor"
 	"github.com/ngavinsir/sqluy/keymap"
 	"github.com/rivo/tview"
@@ -53,14 +54,15 @@ func main() {
 			0, 1, false).
 		AddItem(nil, 0, 1, false)
 
-	page.AddPage("main", flex, true, true)
+	page.AddPage("main", flex, true, false)
+	page.AddPage("data_viewer", dataviewer.New(), true, true)
 	page.AddPage("modal", modalFlex, true, false)
 	page.SetRect(0, 0, 15, 8)
 
 	wg.Add(2)
 	go modalLoop(ctx, modalChan, page, modal, app, &wg)
 	go delayDrawLoop(ctx, &wg, delayDrawChan, app)
-	err := app.SetRoot(page, true).Run()
+	err := app.SetRoot(page, false).Run()
 	cancel()
 	wg.Wait()
 
