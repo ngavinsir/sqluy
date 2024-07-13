@@ -59,7 +59,7 @@ func main() {
 	page.AddPage("main", flex, true, false)
 	page.AddPage("data_viewer", d, true, true)
 	page.AddPage("modal", modalFlex, true, false)
-	page.SetRect(0, 0, 35, 28)
+	page.SetRect(0, 0, 10, 28)
 
 	wg.Add(2)
 	go modalLoop(ctx, modalChan, page, modal, app, &wg)

@@ -122,7 +122,20 @@ rightOffset:
 			break
 		}
 
+		// measure max text height on the row
 		textHeight := 1
+		for _, header := range d.headers {
+			v, ok := r[header]
+			if !ok {
+				continue
+			}
+			text := fmt.Sprintf("%+v", v)
+			th := d.getTextHeight(text, w-2)
+			if th > textHeight {
+				textHeight = th
+			}
+		}
+
 		for j, header := range d.headers[d.offsets[1]:] {
 			j += d.offsets[1]
 			if textX >= x+w-1 {
@@ -136,7 +149,6 @@ rightOffset:
 			text := fmt.Sprintf("%+v", v)
 
 			colWidth := d.getColWidth(header)
-			textHeight = d.getTextHeight(text, colWidth)
 
 			if d.cursor == [2]int{i + 1, j} {
 				defer d.drawCell(screen, i, j, textX, textY, colWidth, 2+textHeight, firstRowOffset, text)
@@ -151,6 +163,16 @@ rightOffset:
 
 	// header
 	textY = y
+
+	// measure max text height on the row
+	textHeight := 1
+	for _, header := range d.headers {
+		th := d.getTextHeight(header, w-2)
+		if th > textHeight {
+			textHeight = th
+		}
+	}
+
 	for i, header := range d.headers {
 		if i < d.offsets[1] {
 			continue
@@ -162,9 +184,9 @@ rightOffset:
 		colWidth := d.getColWidth(header)
 
 		if d.cursor == [2]int{0, i} {
-			defer d.drawHeader(screen, i, textX, textY, colWidth, 3, header)
+			defer d.drawHeader(screen, i, textX, textY, colWidth, 2+textHeight, header)
 		} else {
-			d.drawHeader(screen, i, textX, textY, colWidth, 3, header)
+			d.drawHeader(screen, i, textX, textY, colWidth, 2+textHeight, header)
 		}
 
 		textX += colWidth + 1
@@ -214,6 +236,7 @@ func (d *Dataviewer) getColWidth(header string) int {
 	width := x
 	textX := x
 	for j, header := range d.headers[d.offsets[1]:] {
+		j += d.offsets[1]
 		width += d.getColTextWidth(header) + 1
 		if j < i {
 			textX += d.getColTextWidth(header) + 1
@@ -228,13 +251,13 @@ func (d *Dataviewer) getColWidth(header string) int {
 
 	if emptyHorizontalSpace > 0 && !isLastCol {
 		colWidth += emptyHorizontalSpace / (len(d.headers) - d.offsets[1])
-	} else {
-		colWidth += emptyHorizontalSpace - (emptyHorizontalSpace/(len(d.headers)-d.offsets[1]))*(len(d.headers)-d.offsets[1]-1) - 1
+	} else if emptyHorizontalSpace > 0 {
+		colWidth += emptyHorizontalSpace - (emptyHorizontalSpace/(len(d.headers)-d.offsets[1]))*(len(d.headers)-d.offsets[1]-1)
 	}
 
 	// if the next header width is too wide, extend the current header width until the edge
-	// or if it's the first header and it's too wide
-	if (i == 0 && x+colWidth+1 >= x+w) || (!isLastCol && textX+colWidth+1+d.getColTextWidth(d.headers[i+1])+1 >= x+w) {
+	// or if it's the first/last header and it's too wide
+	if ((i == 0 || isLastCol) && x+colWidth+1 >= x+w) || (!isLastCol && textX+colWidth+1+d.getColTextWidth(d.headers[i+1])+1 >= x+w) {
 		colWidth = w - textX - 1
 	}
 
@@ -325,15 +348,15 @@ func (d *Dataviewer) drawHeader(screen tcell.Screen, i, x, y, colWidth, height i
 
 	// bottom left junction
 	if i > 0 {
-		screen.SetContent(x, y+2, tview.Borders.BottomT, nil, tcell.StyleDefault.Foreground(borderColor).Background(bgColor))
+		screen.SetContent(x, y-1+height, tview.Borders.BottomT, nil, tcell.StyleDefault.Foreground(borderColor).Background(bgColor))
 	} else {
-		screen.SetContent(x, y+2, tview.Borders.BottomLeft, nil, tcell.StyleDefault.Foreground(borderColor).Background(bgColor))
+		screen.SetContent(x, y-1+height, tview.Borders.BottomLeft, nil, tcell.StyleDefault.Foreground(borderColor).Background(bgColor))
 	}
 
 	// bottom right junction
 	if i >= len(d.headers)-1 {
-		screen.SetContent(x+colWidth+1, y+2, tview.Borders.BottomRight, nil, tcell.StyleDefault.Foreground(borderColor).Background(bgColor))
+		screen.SetContent(x+colWidth+1, y-1+height, tview.Borders.BottomRight, nil, tcell.StyleDefault.Foreground(borderColor).Background(bgColor))
 	} else {
-		screen.SetContent(x+colWidth+1, y+2, tview.Borders.BottomT, nil, tcell.StyleDefault.Foreground(borderColor).Background(bgColor))
+		screen.SetContent(x+colWidth+1, y-1+height, tview.Borders.BottomT, nil, tcell.StyleDefault.Foreground(borderColor).Background(bgColor))
 	}
 }
