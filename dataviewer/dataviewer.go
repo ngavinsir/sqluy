@@ -4,6 +4,7 @@ import (
 	_ "embed"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"time"
 
 	"github.com/gdamore/tcell/v2"
@@ -121,10 +122,8 @@ rightOffset:
 			break
 		}
 
-		for j, header := range d.headers {
-			if j < d.offsets[1] {
-				continue
-			}
+		for j, header := range d.headers[d.offsets[1]:] {
+			j += d.offsets[1]
 			if textX >= x+w-1 {
 				break
 			}
@@ -135,10 +134,6 @@ rightOffset:
 			}
 
 			colWidth := d.getColWidth(header)
-			// if the next header width is too wide, extend the current header width until the edge
-			if j < len(d.headers)-1 && textX+colWidth+1+d.getColWidth(d.headers[j+1])+1 >= x+w {
-				colWidth = w - textX - 1
-			}
 
 			if d.cursor == [2]int{i + 1, j} {
 				defer d.drawCell(screen, i, j, textX, textY, colWidth, 3, firstRowOffset, v)
@@ -162,10 +157,6 @@ rightOffset:
 		}
 
 		colWidth := d.getColWidth(header)
-		// if the next header width is too wide, extend the current header width until the edge
-		if i < len(d.headers)-1 && textX+colWidth+1+d.getColWidth(d.headers[i+1])+1 >= x+w {
-			colWidth = w - textX - 1
-		}
 
 		if d.cursor == [2]int{0, i} {
 			defer d.drawHeader(screen, i, textX, textY, colWidth, 3, header)
@@ -177,7 +168,7 @@ rightOffset:
 	}
 }
 
-func (d *Dataviewer) getColWidth(header string) int {
+func (d *Dataviewer) getColTextWidth(header string) int {
 	maxWidth := uniseg.StringWidth(header)
 	for _, r := range d.rows {
 		v, ok := r[header]
@@ -190,6 +181,41 @@ func (d *Dataviewer) getColWidth(header string) int {
 		}
 	}
 	return maxWidth
+}
+
+func (d *Dataviewer) getColWidth(header string) int {
+	i := slices.Index(d.headers, header)
+	x, _, w, _ := d.Box.GetInnerRect()
+
+	emptyHorizontalSpace := 0
+	width := x
+	textX := x
+	for j, header := range d.headers[d.offsets[1]:] {
+		width += d.getColTextWidth(header) + 1
+		if j < i {
+			textX += d.getColTextWidth(header) + 1
+		}
+	}
+	if width < w+x {
+		emptyHorizontalSpace = w + x - width - 1
+	}
+
+	colWidth := d.getColTextWidth(header)
+	isLastCol := i == len(d.headers)-1
+
+	if emptyHorizontalSpace > 0 && !isLastCol {
+		colWidth += emptyHorizontalSpace / (len(d.headers) - d.offsets[1])
+	} else {
+		colWidth += emptyHorizontalSpace - (emptyHorizontalSpace/(len(d.headers)-d.offsets[1]))*(len(d.headers)-d.offsets[1]-1)
+	}
+
+	// if the next header width is too wide, extend the current header width until the edge
+	// or if it's the first header and it's too wide
+	if (i == 0 && x+colWidth+1 >= x+w) || (!isLastCol && textX+colWidth+1+d.getColTextWidth(d.headers[i+1])+1 >= x+w) {
+		colWidth = w - textX - 1
+	}
+
+	return colWidth
 }
 
 func (d *Dataviewer) drawCell(screen tcell.Screen, i, j, x, y, colWidth, height, topPadding int, content any) {
