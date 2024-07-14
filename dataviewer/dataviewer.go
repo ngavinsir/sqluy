@@ -111,7 +111,7 @@ func (d *Dataviewer) Draw(screen tcell.Screen) {
 	}
 
 	// adjust offset if cursor hidden on the bottom
-	height := y + d.getHeaderHeight() + 2
+	height := y + d.getHeaderHeight() + 1
 	// return early if box height is too short
 	if height >= y+h {
 		return
@@ -119,6 +119,7 @@ func (d *Dataviewer) Draw(screen tcell.Screen) {
 bottomOffset:
 	for d.offsets[0] < d.cursor[0] {
 		for i, r := range d.rows[d.offsets[0] : d.cursor[0]+1] {
+			i += d.offsets[0]
 			// measure max text height on the row
 			textHeight := 1
 			for _, header := range d.headers {
@@ -133,27 +134,30 @@ bottomOffset:
 				}
 			}
 
+			fmt.Printf("bo i: %d, offsets: %+v, cursor: %+v, th: %d, height: %d, y: %d, hh: %d, h: %d\n", i, d.offsets, d.cursor, textHeight, height, y, d.getHeaderHeight(), h)
+
+			// increment row offset if current row span until below bottom offset
 			if height+textHeight+1 > y+h+1 {
 				d.offsets[0]++
-				height = y + d.getHeaderHeight() + 2
+				height = y + d.getHeaderHeight() + 1
 				break
 			}
-			if i >= d.cursor[0]-d.offsets[0] {
+
+			// cursor is no longer hidden below, can break
+			if i >= d.cursor[0] {
 				break bottomOffset
 			}
+
 			height += textHeight + 1
 		}
 	}
 
+	// draw rows
 	for i, r := range d.rows[d.offsets[0]:] {
 		i += d.offsets[0]
 		firstRowOffset := 0
 		if i == d.offsets[0] {
 			firstRowOffset = 1
-		}
-
-		if textY+2+firstRowOffset >= y+h {
-			break
 		}
 
 		// measure max text height on the row
@@ -170,6 +174,10 @@ bottomOffset:
 			}
 		}
 
+		if textY+1+textHeight+firstRowOffset >= y+h {
+			break
+		}
+
 		for j, header := range d.headers[d.offsets[1]:] {
 			j += d.offsets[1]
 			if textX >= x+w-1 {
@@ -182,7 +190,6 @@ bottomOffset:
 			}
 			text := fmt.Sprintf("%+v", v)
 
-			fmt.Printf("drawing cell row: %d, col: %d\n", i, j)
 			colWidth := d.getColWidth(j)
 			if colWidth == 0 {
 				break
