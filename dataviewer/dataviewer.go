@@ -86,8 +86,11 @@ func (d *Dataviewer) Draw(screen tcell.Screen) {
 	}()
 
 	// adjust offset if cursor hidden on the top
-	if d.cursor[0] < d.offsets[0] {
-		d.offsets[0] = d.cursor[0]
+	if d.cursor[0] < d.offsets[0]+1 {
+		d.offsets[0] = d.cursor[0] - 1
+		if d.offsets[0] < 0 {
+			d.offsets[0] = 0
+		}
 	}
 
 	// adjust offset if cursor is hidden on the left
