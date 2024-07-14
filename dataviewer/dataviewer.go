@@ -52,9 +52,9 @@ func New(app *tview.Application) *Dataviewer {
 	}
 
 	d := &Dataviewer{
-		Box: tview.NewBox().SetBorder(true).SetTitle("Dataviewer").SetTitleAlign(tview.AlignLeft),
-		// headers: headers,
-		headers:      []string{"username", "bank", "crypto", "macAddress", "weight", "email", "role", "age", "gender", "ein", "height", "phone", "birthDate", "eyeColor", "password", "ip", "image", "id", "address", "lastName", "university", "bloodGroup", "firstName", "ssn", "company", "userAgent", "maidenName", "hair"},
+		Box:     tview.NewBox().SetBorder(true).SetTitle("Dataviewer").SetTitleAlign(tview.AlignLeft),
+		headers: headers,
+		// headers:      []string{"username", "bank", "crypto", "macAddress", "weight", "email", "role", "age", "gender", "ein", "height", "phone", "birthDate", "eyeColor", "password", "ip", "image", "id", "address", "lastName", "university", "bloodGroup", "firstName", "ssn", "company", "userAgent", "maidenName", "hair"},
 		rows:         items[:30],
 		bgColor:      tview.Styles.PrimitiveBackgroundColor,
 		borderColor:  tcell.ColorGray,
@@ -73,7 +73,6 @@ func (d *Dataviewer) Draw(screen tcell.Screen) {
 		// fmt.Printf("vis left: %d, vis right: %d, colWidths: %+v\n", d.visibleLeft, d.visibleRight, d.colWidths)
 	}()
 	d.Box.DrawForSubclass(screen, d)
-	fmt.Println("draw")
 
 	x, y, w, h := d.Box.GetInnerRect()
 	textX := x
@@ -136,8 +135,6 @@ bottomOffset:
 					textHeight = th
 				}
 			}
-
-			fmt.Printf("bo i: %d, offsets: %+v, cursor: %+v, th: %d, height: %d, y: %d, hh: %d, h: %d\n", i, d.offsets, d.cursor, textHeight, height, y, d.getHeaderHeight(), h)
 
 			// increment row offset if current row span until below bottom offset
 			if height+textHeight+1 > y+h+1 {
@@ -281,12 +278,6 @@ func (d *Dataviewer) getColWidth(colIndex int) int {
 		return 0
 	}
 
-	// current cursor is hidden on the left, try to shift left as far as possible while making sure that col index is still visible
-	// if d.cursor[1] < d.offsets[1] {
-	// 	d.offsets[1] = d.cursor[1]
-	// 	return d.getColWidth(colIndex, true)
-	// }
-
 	startIndex := d.offsets[1]
 	lastIndex := d.offsets[1]
 	x, _, w, _ := d.Box.GetInnerRect()
@@ -312,12 +303,6 @@ func (d *Dataviewer) getColWidth(colIndex int) int {
 	}
 	emptyHorizontalSpace = w + x - width - 1
 
-	// current cursor is hidden on the right and isHiddenLeft is true, use the latest one
-	// if d.cursor[1] > lastIndex && isHiddenLeft {
-	// 	d.offsets[1]++
-	// 	return d.getColWidth(colIndex, false)
-	// }
-
 	d.visibleLeft = startIndex
 	d.visibleRight = lastIndex
 
@@ -336,15 +321,6 @@ func (d *Dataviewer) getColWidth(colIndex int) int {
 			}
 		}
 	}
-
-	// if isHiddenLeft try to shift left again until col index is no longer visible, then use the latest one
-	// if isHiddenLeft && d.offsets[1] > 0 {
-	// 	d.offsets[1]--
-	// 	return d.getColWidth(colIndex, true)
-	// }
-
-	fmt.Printf("col index: %d,  colWidths: %+v, startIndex: %d, lastIndex: %d, x: %d, w: %d, width: %d, emptyHorizontalSpace: %d\n", colIndex, d.colWidths, startIndex, lastIndex, x, w, width, emptyHorizontalSpace)
-	fmt.Printf("vis left: %d, vis right: %d, colWidths: %+v\n", d.visibleLeft, d.visibleRight, d.colWidths)
 
 	if colIndex >= startIndex && colIndex <= lastIndex {
 		return d.colWidths[colIndex-startIndex]
