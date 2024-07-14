@@ -73,6 +73,7 @@ func (d *Dataviewer) Draw(screen tcell.Screen) {
 		// fmt.Printf("vis left: %d, vis right: %d, colWidths: %+v\n", d.visibleLeft, d.visibleRight, d.colWidths)
 	}()
 	d.Box.DrawForSubclass(screen, d)
+	fmt.Println("draw")
 
 	x, y, w, h := d.Box.GetInnerRect()
 	textX := x
@@ -93,6 +94,7 @@ func (d *Dataviewer) Draw(screen tcell.Screen) {
 	}
 
 	// adjust offset if cursor is hidden on the left
+	fmt.Println("adjust left")
 	if d.getColWidth(d.cursor[1]) == 0 && d.cursor[1] < d.offsets[1] {
 		d.offsets[1] = d.cursor[1]
 		for d.offsets[1] > 0 {
@@ -106,6 +108,7 @@ func (d *Dataviewer) Draw(screen tcell.Screen) {
 	}
 
 	// adjust offset if cursor is hidden on the right
+	fmt.Println("adjust right")
 	for d.getColWidth(d.cursor[1]) == 0 && d.cursor[1] > d.offsets[1] {
 		d.offsets[1]++
 		d.visibleLeft = -1
@@ -190,6 +193,7 @@ bottomOffset:
 			}
 			text := fmt.Sprintf("%+v", v)
 
+			fmt.Printf("draw row: %d, col: %d\n", i, j)
 			colWidth := d.getColWidth(j)
 			if colWidth == 0 {
 				break
@@ -306,21 +310,27 @@ func (d *Dataviewer) getColWidth(colIndex int) int {
 	d.visibleLeft = startIndex
 	d.visibleRight = lastIndex
 
-	if startIndex == lastIndex && width+d.getColTextWidth(startIndex)+1 >= x+w {
+	if startIndex == lastIndex && width == x && width+d.getColTextWidth(startIndex)+1 >= x+w {
 		d.colWidths = []int{emptyHorizontalSpace - 1}
 	} else {
 		d.colWidths = make([]int, lastIndex-startIndex+1)
 		for a := range len(d.colWidths) {
 			colWidth := d.getColTextWidth(a + startIndex)
 			if emptyHorizontalSpace > 0 && a < len(d.colWidths)-1 {
+				fmt.Println("$a")
 				d.colWidths[a] = colWidth + emptyHorizontalSpace/(lastIndex-startIndex+1)
 			} else if emptyHorizontalSpace > 0 {
-				d.colWidths[a] = colWidth + emptyHorizontalSpace - (emptyHorizontalSpace/(lastIndex-startIndex+1))*(lastIndex-startIndex+1-1)
+				fmt.Println("$b")
+				d.colWidths[a] = colWidth + emptyHorizontalSpace - (emptyHorizontalSpace/(lastIndex-startIndex+1))*(lastIndex-startIndex)
 			} else {
+				fmt.Println("$c")
 				d.colWidths[a] = colWidth
 			}
 		}
 	}
+
+	// fmt.Printf("colIdx: %d, startIdx: %d, lastIdx: %d, x: %d, w: %d, width: %d, empty: %d\n", colIndex, startIndex, lastIndex, x, w, width, emptyHorizontalSpace)
+	// fmt.Printf("vis start: %d, vis end: %d, colwidth: %d, col widths: %+v\n", d.visibleLeft, d.visibleRight, d.getColTextWidth(startIndex), d.colWidths)
 
 	if colIndex >= startIndex && colIndex <= lastIndex {
 		return d.colWidths[colIndex-startIndex]
