@@ -52,9 +52,9 @@ func New(app *tview.Application) *Dataviewer {
 	}
 
 	d := &Dataviewer{
-		Box:     tview.NewBox().SetBorder(true).SetTitle("Dataviewer").SetTitleAlign(tview.AlignLeft),
-		headers: headers,
-		// headers:      []string{"username", "bank", "crypto", "macAddress", "weight", "email", "role", "age", "gender", "ein", "height", "phone", "birthDate", "eyeColor", "password", "ip", "image", "id", "address", "lastName", "university", "bloodGroup", "firstName", "ssn", "company", "userAgent", "maidenName", "hair"},
+		Box: tview.NewBox().SetBorder(true).SetTitle("Dataviewer").SetTitleAlign(tview.AlignLeft),
+		// headers: headers,
+		headers:      []string{"password", "eyeColor", "ein", "gender", "id", "macAddress", "hair", "role", "email", "height", "company", "age", "ssn", "bloodGroup", "ip", "university", "maidenName", "image", "lastName", "username", "phone", "userAgent", "birthDate", "firstName", "address", "crypto", "bank", "weight"},
 		rows:         items[:30],
 		bgColor:      tview.Styles.PrimitiveBackgroundColor,
 		borderColor:  tcell.ColorGray,
@@ -77,7 +77,7 @@ func (d *Dataviewer) Draw(screen tcell.Screen) {
 	x, y, w, h := d.Box.GetInnerRect()
 	textX := x
 	textY := y
-	textY += 2
+	textY += d.getHeaderHeight() + 1
 	textX = x
 	defer func() {
 		tview.Print(screen, fmt.Sprintf("%+v", d.offsets), x, y+h, 10, tview.AlignLeft, tcell.ColorWhite)
@@ -113,7 +113,7 @@ func (d *Dataviewer) Draw(screen tcell.Screen) {
 	}
 
 	// adjust offset if cursor hidden on the bottom
-	height := y + d.getHeaderHeight() + 1
+	height := y + d.getHeaderHeight() + 2
 	// return early if box height is too short
 	if height >= y+h {
 		return
@@ -137,14 +137,14 @@ bottomOffset:
 			}
 
 			// increment row offset if current row span until below bottom offset
-			if height+textHeight+1 > y+h+1 {
+			if height+textHeight+1 >= y+h {
 				d.offsets[0]++
-				height = y + d.getHeaderHeight() + 1
+				height = y + d.getHeaderHeight() + 2
 				break
 			}
 
 			// cursor is no longer hidden below, can break
-			if i >= d.cursor[0] {
+			if i >= d.cursor[0]-1 {
 				break bottomOffset
 			}
 
