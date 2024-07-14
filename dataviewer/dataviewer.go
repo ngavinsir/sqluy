@@ -12,14 +12,20 @@ import (
 )
 
 type (
+	keymapper interface {
+		Get(keys []string, group string) ([]string, bool)
+	}
+
 	Dataviewer struct {
+		keymapper keymapper
 		*tview.Box
 		colWidths     []int
 		headers       []string
 		rows          []map[string]any
 		rowHeights    []int
-		offsets       [2]int
+		pending       []string
 		cursor        [2]int
+		offsets       [2]int
 		visibleLeft   int
 		visibleTop    int
 		visibleBottom int
@@ -33,7 +39,7 @@ type (
 //go:embed sample.json
 var sampleItems []byte
 
-func New(app *tview.Application) *Dataviewer {
+func New(app *tview.Application, km keymapper) *Dataviewer {
 	var items []map[string]any
 	err := json.Unmarshal(sampleItems, &items)
 	if err != nil {
@@ -52,7 +58,8 @@ func New(app *tview.Application) *Dataviewer {
 	}
 
 	d := &Dataviewer{
-		Box: tview.NewBox().SetBorder(true).SetTitle("Dataviewer").SetTitleAlign(tview.AlignLeft),
+		keymapper: km,
+		Box:       tview.NewBox().SetBorder(true).SetTitle("Dataviewer").SetTitleAlign(tview.AlignLeft),
 		// headers: headers,
 		headers:      []string{"password", "eyeColor", "ein", "gender", "id", "macAddress", "hair", "role", "email", "height", "company", "age", "ssn", "bloodGroup", "ip", "university", "maidenName", "image", "lastName", "username", "phone", "userAgent", "birthDate", "firstName", "address", "crypto", "bank", "weight"},
 		rows:         items[:30],
@@ -81,8 +88,8 @@ func (d *Dataviewer) Draw(screen tcell.Screen) {
 	textY += d.getHeaderHeight() + 1
 	textX = x
 	defer func() {
-		tview.Print(screen, fmt.Sprintf("%+v", d.offsets), x, y+h, 10, tview.AlignLeft, tcell.ColorWhite)
-		tview.Print(screen, fmt.Sprintf("%+v", d.cursor), x, y+h+1, 10, tview.AlignLeft, tcell.ColorWhite)
+		tview.Print(screen, fmt.Sprintf(" O:%+v ", d.offsets), x+2, y+h, 10, tview.AlignLeft, tcell.ColorWhite)
+		tview.Print(screen, fmt.Sprintf(" C:%+v ", d.cursor), x+12, y+h, 10, tview.AlignLeft, tcell.ColorWhite)
 	}()
 
 	// adjust offset if cursor hidden on the top
@@ -449,6 +456,24 @@ func (d *Dataviewer) drawHeader(screen tcell.Screen, i, x, y, colWidth, height i
 
 func (d *Dataviewer) InputHandler() func(event *tcell.EventKey, setFocus func(p tview.Primitive)) {
 	return d.Box.WrapInputHandler(func(event *tcell.EventKey, setFocus func(p tview.Primitive)) {
+		eventName := event.Name()
+		if event.Key() == tcell.KeyRune {
+			eventName = string(event.Rune())
+		} else {
+			eventName = strings.ToLower(eventName)
+		}
+		d.pending = append(d.pending, eventName)
+
+		group := "r"
+		if d.cursor[0] == 0 {
+			group = "h"
+		}
+
+		actionStrings, anyStartWith := d.keymapper.Get(d.pending, group)
+		if actionStrings == nil {
+			actionStrings = []string{""}
+		}
+
 		switch event.Key() {
 		case tcell.KeyUp:
 			d.cursor[0]--
