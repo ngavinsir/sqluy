@@ -12,7 +12,7 @@ type (
 	}
 
 	keymapJSON struct {
-		Keymaps []struct {
+		Keymaps map[string][]struct {
 			Action          string   `json:"action"`
 			AllPossibleKeys keys     `json:"keys"`
 			Groups          []string `json:"groups"`
@@ -85,13 +85,15 @@ func keyTreePerGroupFromJSONString(s string) map[string]*keyTree {
 		panic("invalid key map json: " + err.Error())
 	}
 
-	for _, keymap := range j.Keymaps {
-		for _, group := range keymap.Groups {
-			if m[group] == nil {
-				m[group] = &keyTree{}
-			}
-			for _, k := range keymap.AllPossibleKeys.Keys {
-				m[group].Add(k, keymap.Action)
+	for namespace, keymaps := range j.Keymaps {
+		for _, keymap := range keymaps {
+			for _, group := range keymap.Groups {
+				if m[group] == nil {
+					m[group] = &keyTree{}
+				}
+				for _, k := range keymap.AllPossibleKeys.Keys {
+					m[group].Add(k, namespace+"."+keymap.Action)
+				}
 			}
 		}
 	}

@@ -4,8 +4,7 @@ import (
 	_ "embed"
 	"encoding/json"
 	"fmt"
-	"slices"
-	"time"
+	"strings"
 
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
@@ -15,14 +14,19 @@ import (
 type (
 	Dataviewer struct {
 		*tview.Box
-		headers     []string
-		rows        []map[string]any
-		bgColor     tcell.Color
-		borderColor tcell.Color
-		textColor   tcell.Color
-
-		cursor  [2]int
-		offsets [2]int
+		colWidths     []int
+		headers       []string
+		rows          []map[string]any
+		rowHeights    []int
+		offsets       [2]int
+		cursor        [2]int
+		visibleLeft   int
+		visibleTop    int
+		visibleBottom int
+		visibleRight  int
+		textColor     tcell.Color
+		borderColor   tcell.Color
+		bgColor       tcell.Color
 	}
 )
 
@@ -48,37 +52,28 @@ func New(app *tview.Application) *Dataviewer {
 	}
 
 	d := &Dataviewer{
-		Box:         tview.NewBox().SetBorder(true).SetTitle("Dataviewer").SetTitleAlign(tview.AlignLeft),
-		headers:     headers,
-		rows:        items[:30],
-		bgColor:     tview.Styles.PrimitiveBackgroundColor,
-		borderColor: tcell.ColorGray,
-		textColor:   tcell.ColorWhite,
-		cursor:      [2]int{3, 25},
-		offsets:     [2]int{0, 23},
+		Box: tview.NewBox().SetBorder(true).SetTitle("Dataviewer").SetTitleAlign(tview.AlignLeft),
+		// headers: headers,
+		headers:      []string{"username", "bank", "crypto", "macAddress", "weight", "email", "role", "age", "gender", "ein", "height", "phone", "birthDate", "eyeColor", "password", "ip", "image", "id", "address", "lastName", "university", "bloodGroup", "firstName", "ssn", "company", "userAgent", "maidenName", "hair"},
+		rows:         items[:30],
+		bgColor:      tview.Styles.PrimitiveBackgroundColor,
+		borderColor:  tcell.ColorGray,
+		textColor:    tcell.ColorWhite,
+		visibleLeft:  -1,
+		visibleRight: -1,
 	}
-
-	go func() {
-		for {
-			time.Sleep(900 * time.Millisecond)
-			app.QueueUpdateDraw(func() {
-				d.cursor[1]++
-				if d.cursor[1] > len(d.headers)-1 {
-					d.cursor[0]++
-					d.cursor[1] = 0
-				}
-				if d.cursor[0] > len(d.rows) {
-					d.cursor[0] = 0
-				}
-			})
-		}
-	}()
+	fmt.Printf("headers: []string{\"%s\"}\n", strings.Join(headers, "\", \""))
 
 	return d
 }
 
 func (d *Dataviewer) Draw(screen tcell.Screen) {
+	defer func() {
+		fmt.Printf("cursor: %+v, offsets: %+v\n", d.cursor, d.offsets)
+		// fmt.Printf("vis left: %d, vis right: %d, colWidths: %+v\n", d.visibleLeft, d.visibleRight, d.colWidths)
+	}()
 	d.Box.DrawForSubclass(screen, d)
+	fmt.Println("draw")
 
 	x, y, w, h := d.Box.GetInnerRect()
 	textX := x
@@ -90,32 +85,29 @@ func (d *Dataviewer) Draw(screen tcell.Screen) {
 		tview.Print(screen, fmt.Sprintf("%+v", d.cursor), x, y+h+1, 10, tview.AlignLeft, tcell.ColorWhite)
 	}()
 
-	// adjust offset if cursor hidden on the left
-	if d.cursor[1] < d.offsets[1] {
-		d.offsets[1] = d.cursor[1]
-	}
-
-	// adjust offset if cursor hidden on the right
-	width := x
-rightOffset:
-	for d.offsets[1] < d.cursor[1] {
-		for i, h := range d.headers[d.offsets[1] : d.cursor[1]+1] {
-			colWidth := d.getColTextWidth(h)
-			if width+colWidth+1 >= x+w {
-				d.offsets[1]++
-				width = x
-				break
-			}
-			if i >= d.cursor[1]-d.offsets[1] {
-				break rightOffset
-			}
-			width += colWidth + 1
-		}
-	}
-
 	// adjust offset if cursor hidden on the top
 	if d.cursor[0] < d.offsets[0] {
 		d.offsets[0] = d.cursor[0]
+	}
+
+	// adjust offset if cursor is hidden on the left
+	if d.getColWidth(d.cursor[1]) == 0 && d.cursor[1] < d.offsets[1] {
+		d.offsets[1] = d.cursor[1]
+		for d.offsets[1] > 0 {
+			d.offsets[1]--
+			d.visibleLeft = -1
+			d.visibleRight = -1
+			if b := d.getColWidth(d.cursor[1]); b == 0 {
+				break
+			}
+		}
+	}
+
+	// adjust offset if cursor is hidden on the right
+	for d.getColWidth(d.cursor[1]) == 0 && d.cursor[1] > d.offsets[1] {
+		d.offsets[1]++
+		d.visibleLeft = -1
+		d.visibleRight = -1
 	}
 
 	// adjust offset if cursor hidden on the bottom
@@ -190,7 +182,11 @@ bottomOffset:
 			}
 			text := fmt.Sprintf("%+v", v)
 
-			colWidth := d.getColWidth(header)
+			fmt.Printf("drawing cell row: %d, col: %d\n", i, j)
+			colWidth := d.getColWidth(j)
+			if colWidth == 0 {
+				break
+			}
 
 			if d.cursor == [2]int{i + 1, j} {
 				defer d.drawCell(screen, i, j, textX, textY, colWidth, 2+textHeight, firstRowOffset, text)
@@ -215,7 +211,7 @@ bottomOffset:
 			break
 		}
 
-		colWidth := d.getColWidth(header)
+		colWidth := d.getColWidth(i)
 
 		if d.cursor == [2]int{0, i} {
 			defer d.drawHeader(screen, i, textX, textY, colWidth, 2+headerHeight, header)
@@ -227,7 +223,8 @@ bottomOffset:
 	}
 }
 
-func (d *Dataviewer) getColTextWidth(header string) int {
+func (d *Dataviewer) getColTextWidth(colIndex int) int {
+	header := d.headers[colIndex]
 	maxWidth := uniseg.StringWidth(header)
 	for _, r := range d.rows {
 		v, ok := r[header]
@@ -262,40 +259,87 @@ func (d *Dataviewer) getTextHeight(text string, w int) int {
 	return textY + 1
 }
 
-func (d *Dataviewer) getColWidth(header string) int {
-	i := slices.Index(d.headers, header)
+func (d *Dataviewer) getColWidth(colIndex int) int {
+	isColVisible := colIndex >= d.visibleLeft && colIndex <= d.visibleRight
+	isCursorVisible := d.cursor[1] >= d.visibleLeft && d.cursor[1] <= d.visibleRight
+	// if col and cursor is visible, returned cached width
+	if isColVisible && isCursorVisible {
+		return d.colWidths[colIndex-d.visibleLeft]
+	}
+	// if cursor is visible but col is not, then just return 0
+	if isCursorVisible {
+		return 0
+	}
+
+	// current cursor is hidden on the left, try to shift left as far as possible while making sure that col index is still visible
+	// if d.cursor[1] < d.offsets[1] {
+	// 	d.offsets[1] = d.cursor[1]
+	// 	return d.getColWidth(colIndex, true)
+	// }
+
+	startIndex := d.offsets[1]
+	lastIndex := d.offsets[1]
 	x, _, w, _ := d.Box.GetInnerRect()
+	width := x
 
 	emptyHorizontalSpace := 0
-	width := x
-	textX := x
-	for j, header := range d.headers[d.offsets[1]:] {
+	for j := range d.headers[d.offsets[1]:] {
 		j += d.offsets[1]
-		width += d.getColTextWidth(header) + 1
-		if j < i {
-			textX += d.getColTextWidth(header) + 1
+		lastIndex = j
+
+		// if the first width is already too wide, break
+		if width+d.getColTextWidth(j)+1 >= x+w {
+			break
+		}
+
+		width += d.getColTextWidth(j) + 1
+
+		// stop if the next header is too wide
+		if j < len(d.headers)-1 && width+d.getColTextWidth(j+1)+1 >= x+w {
+			fmt.Println("next header is too wide")
+			break
 		}
 	}
-	if width < w+x {
-		emptyHorizontalSpace = w + x - width - 1
+	emptyHorizontalSpace = w + x - width - 1
+
+	// current cursor is hidden on the right and isHiddenLeft is true, use the latest one
+	// if d.cursor[1] > lastIndex && isHiddenLeft {
+	// 	d.offsets[1]++
+	// 	return d.getColWidth(colIndex, false)
+	// }
+
+	d.visibleLeft = startIndex
+	d.visibleRight = lastIndex
+
+	if startIndex == lastIndex && width+d.getColTextWidth(startIndex)+1 >= x+w {
+		d.colWidths = []int{emptyHorizontalSpace - 1}
+	} else {
+		d.colWidths = make([]int, lastIndex-startIndex+1)
+		for a := range len(d.colWidths) {
+			colWidth := d.getColTextWidth(a + startIndex)
+			if emptyHorizontalSpace > 0 && a < len(d.colWidths)-1 {
+				d.colWidths[a] = colWidth + emptyHorizontalSpace/(lastIndex-startIndex+1)
+			} else if emptyHorizontalSpace > 0 {
+				d.colWidths[a] = colWidth + emptyHorizontalSpace - (emptyHorizontalSpace/(lastIndex-startIndex+1))*(lastIndex-startIndex+1-1)
+			} else {
+				d.colWidths[a] = colWidth
+			}
+		}
 	}
 
-	colWidth := d.getColTextWidth(header)
-	isLastCol := i == len(d.headers)-1
+	// if isHiddenLeft try to shift left again until col index is no longer visible, then use the latest one
+	// if isHiddenLeft && d.offsets[1] > 0 {
+	// 	d.offsets[1]--
+	// 	return d.getColWidth(colIndex, true)
+	// }
 
-	if emptyHorizontalSpace > 0 && !isLastCol {
-		colWidth += emptyHorizontalSpace / (len(d.headers) - d.offsets[1])
-	} else if emptyHorizontalSpace > 0 {
-		colWidth += emptyHorizontalSpace - (emptyHorizontalSpace/(len(d.headers)-d.offsets[1]))*(len(d.headers)-d.offsets[1]-1)
+	fmt.Printf("col index: %d,  colWidths: %+v, startIndex: %d, lastIndex: %d, x: %d, w: %d, width: %d, emptyHorizontalSpace: %d\n", colIndex, d.colWidths, startIndex, lastIndex, x, w, width, emptyHorizontalSpace)
+	fmt.Printf("vis left: %d, vis right: %d, colWidths: %+v\n", d.visibleLeft, d.visibleRight, d.colWidths)
+
+	if colIndex >= startIndex && colIndex <= lastIndex {
+		return d.colWidths[colIndex-startIndex]
 	}
-
-	// if the next header width is too wide, extend the current header width until the edge
-	// or if it's the first/last header and it's too wide
-	if ((i == 0 || isLastCol) && x+colWidth+1 >= x+w) || (!isLastCol && textX+colWidth+1+d.getColTextWidth(d.headers[i+1])+1 >= x+w) {
-		colWidth = w - textX - 1
-	}
-
-	return colWidth
+	return 0
 }
 
 func (d *Dataviewer) getHeaderHeight() int {
@@ -405,4 +449,31 @@ func (d *Dataviewer) drawHeader(screen tcell.Screen, i, x, y, colWidth, height i
 	} else {
 		screen.SetContent(x+colWidth+1, y-1+height, tview.Borders.BottomT, nil, tcell.StyleDefault.Foreground(borderColor).Background(bgColor))
 	}
+}
+
+func (d *Dataviewer) InputHandler() func(event *tcell.EventKey, setFocus func(p tview.Primitive)) {
+	return d.Box.WrapInputHandler(func(event *tcell.EventKey, setFocus func(p tview.Primitive)) {
+		switch event.Key() {
+		case tcell.KeyUp:
+			d.cursor[0]--
+			if d.cursor[0] < 0 {
+				d.cursor[0] = 0
+			}
+		case tcell.KeyDown:
+			d.cursor[0]++
+			if d.cursor[0] > len(d.rows) {
+				d.cursor[0] = len(d.rows)
+			}
+		case tcell.KeyLeft:
+			d.cursor[1]--
+			if d.cursor[1] < 0 {
+				d.cursor[1] = 0
+			}
+		case tcell.KeyRight:
+			d.cursor[1]++
+			if d.cursor[1] > len(d.headers)-1 {
+				d.cursor[1] = len(d.headers) - 1
+			}
+		}
+	})
 }
