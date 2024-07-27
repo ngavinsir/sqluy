@@ -1,5 +1,52 @@
 {
   "keymaps": {
+    "dataviewer": [
+      {
+        "keys": [
+          "down"
+        ],
+        "groups": [
+          "r",
+          "h"
+        ],
+        "action": "move_down"
+      },
+      {
+        "keys": [
+          "up"
+        ],
+        "groups": [
+          "r",
+          "h"
+        ],
+        "action": "move_up"
+      },
+      {
+        "keys": [
+          "right"
+        ],
+        "groups": [
+          "r",
+          "h"
+        ],
+        "action": "move_right"
+      },
+      {
+        "keys": [
+          [
+            "left"
+          ],
+          [
+            "h"
+          ]
+        ],
+        "groups": [
+          "r",
+          "h"
+        ],
+        "action": "move_left"
+      }
+    ],
     "editor": [
       {
         "keys": [

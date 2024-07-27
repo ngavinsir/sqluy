@@ -5,8 +5,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"unicode"
 
 	"github.com/gdamore/tcell/v2"
+	"github.com/ngavinsir/sqluy/vim"
 	"github.com/rivo/tview"
 	"github.com/rivo/uniseg"
 )
@@ -17,22 +19,32 @@ type (
 	}
 
 	Dataviewer struct {
-		keymapper keymapper
+		keymapper    keymapper
+		actionRunner map[Action]func()
 		*tview.Box
-		colWidths     []int
-		headers       []string
-		rows          []map[string]any
-		rowHeights    []int
-		pending       []string
-		cursor        [2]int
-		offsets       [2]int
-		visibleLeft   int
-		visibleTop    int
-		visibleBottom int
-		visibleRight  int
-		textColor     tcell.Color
-		borderColor   tcell.Color
-		bgColor       tcell.Color
+		operatorRunner   map[Action]func(target [2]int)
+		motionRunner     map[Action]func() [2]int
+		runeRunner       map[Action]func(r rune)
+		pending          []string
+		rowHeights       []int
+		rows             []map[string]any
+		headers          []string
+		colWidths        []int
+		cursor           [2]int
+		offsets          [2]int
+		visualStart      [2]int
+		visibleTop       int
+		textColor        tcell.Color
+		borderColor      tcell.Color
+		bgColor          tcell.Color
+		pendingAction    Action
+		lastMotion       Action
+		pendingCount     int
+		visibleRight     int
+		visibleBottom    int
+		visibleLeft      int
+		waitingForMotion bool
+		mode             mode
 	}
 )
 
@@ -70,6 +82,38 @@ func New(app *tview.Application, km keymapper) *Dataviewer {
 		visibleRight: -1,
 	}
 	fmt.Printf("headers: []string{\"%s\"}\n", strings.Join(headers, "\", \""))
+
+	d.operatorRunner = map[Action]func(target [2]int){
+		ActionNone: d.MoveCursorTo,
+	}
+
+	d.motionRunner = map[Action]func() [2]int{
+		// ActionMoveEndOfLine:          d.GetEndOfLineCursor,
+		// ActionMoveStartOfLine:        d.GetStartOfLineCursor,
+		// ActionMoveFirstNonWhitespace: d.GetFirstNonWhitespaceCursor,
+		ActionMoveDown:  d.GetDownCursor,
+		ActionMoveUp:    d.GetUpCursor,
+		ActionMoveLeft:  d.GetLeftCursor,
+		ActionMoveRight: d.GetRightCursor,
+		// ActionMoveLastLine:           d.GetLastLineCursor,
+		// ActionMoveFirstLine:          d.GetFirstLineCursor,
+		// ActionMoveStartOfWord:        d.GetStartOfWordCursor,
+		// ActionMoveStartOfBigWord:     d.GetStartOfBigWordCursor,
+		// ActionMoveEndOfBigWord:       d.GetEndOfBigWordCursor,
+		// ActionMoveBackEndOfBigWord:   d.GetBackEndOfBigWordCursor,
+		// ActionMoveBackStartOfBigWord: d.GetBackStartOfBigWordCursor,
+		// ActionMoveEndOfWord:          d.GetEndOfWordCursor,
+		// ActionMoveBackEndOfWord:      d.GetBackEndOfWordCursor,
+		// ActionMoveBackStartOfWord:    d.GetBackStartOfWordCursor,
+		// ActionEnableSearch:           d.EnableSearch,
+		// ActionFlash:                  d.Flash,
+		// ActionTil:                    d.GetTilCursor,
+		// ActionTilBack:                d.GetTilBackCursor,
+		// ActionFind:                   d.GetFindCursor,
+		// ActionFindBack:               d.GetFindBackCursor,
+		// ActionInside:                 d.GetInsideOrAroundCursor,
+		// ActionAround:                 d.GetInsideOrAroundCursor,
+	}
 
 	return d
 }
@@ -464,6 +508,8 @@ func (d *Dataviewer) InputHandler() func(event *tcell.EventKey, setFocus func(p 
 		}
 		d.pending = append(d.pending, eventName)
 
+		isDigit := event.Key() == tcell.KeyRune && unicode.IsDigit(event.Rune())
+
 		group := "r"
 		if d.cursor[0] == 0 {
 			group = "h"
@@ -474,27 +520,161 @@ func (d *Dataviewer) InputHandler() func(event *tcell.EventKey, setFocus func(p 
 			actionStrings = []string{""}
 		}
 
-		switch event.Key() {
-		case tcell.KeyUp:
-			d.cursor[0]--
-			if d.cursor[0] < 0 {
-				d.cursor[0] = 0
+		for _, actionString := range actionStrings {
+			action := ActionFromString(actionString)
+
+			// if not found, try again without pending action in pending for motion only
+			if action == ActionNone && d.pendingAction != ActionNone && len(d.pending) > 1 {
+				actionStrings, anyStartWith2 := d.keymapper.Get(d.pending[1:], group)
+				for _, actionString := range actionStrings {
+					a := ActionFromString(actionString)
+					if a.IsMotion() {
+						action = a
+						anyStartWith = anyStartWith2
+						break
+					}
+				}
 			}
-		case tcell.KeyDown:
-			d.cursor[0]++
-			if d.cursor[0] > len(d.rows) {
-				d.cursor[0] = len(d.rows)
+
+			// if waitingForMotion is true but the event is not a rune event, reset the action state
+			if d.waitingForMotion && event.Key() != tcell.KeyRune {
+				d.ResetAction()
+				return
+
+				// if waitingForMotion is true and the last motion is waiting for a rune and a rune runner exist for it
+			} else if d.waitingForMotion && d.lastMotion.IsWaitingForRune() && d.runeRunner[d.lastMotion] != nil {
+				d.runeRunner[d.lastMotion](event.Rune())
+				action = d.lastMotion
 			}
-		case tcell.KeyLeft:
-			d.cursor[1]--
-			if d.cursor[1] < 0 {
-				d.cursor[1] = 0
+
+			// handle operators actions
+			// no need to wait for motion action in visual mode
+			if action.IsOperator() && (d.mode == visual || d.mode == vline) && action != ActionVisual && action != ActionVisualLine {
+				prevMode := d.mode
+
+				if d.mode == vline {
+					if d.cursor[0] > d.visualStart[0] || (d.cursor[0] == d.visualStart[0] && d.cursor[1] > d.visualStart[1]) {
+						d.cursor, d.visualStart = d.visualStart, d.cursor
+					}
+					d.cursor[1] = 0
+					d.visualStart[1] = len(d.headers) - 1
+				}
+
+				d.operatorRunner[action](d.visualStart)
+				if d.mode == prevMode {
+					d.mode = normal
+				}
+				d.ResetAction()
+				return
 			}
-		case tcell.KeyRight:
-			d.cursor[1]++
-			if d.cursor[1] > len(d.headers)-1 {
-				d.cursor[1] = len(d.headers) - 1
+			// save operator action in pendingAction, wait for the next motion action
+			if action.IsOperator() {
+				d.pendingAction = action
+				return
+			}
+
+			// handle motion actions
+			// ignore countless motion (d.g. start of line motion) if pending count is not zero
+			if action.IsMotion() && (!action.IsCountlessMotion() || d.pendingCount == 0) &&
+				d.motionRunner[action] != nil && (action.IsOperatorlessMotion() || d.pendingAction != ActionNone) {
+				m := d.motionRunner[action]()
+				if vim.IsAsyncMotion(m) {
+					d.lastMotion = action
+					return
+				}
+
+				if d.operatorRunner[d.pendingAction] != nil {
+					d.operatorRunner[d.pendingAction](m)
+				}
+				d.ResetAction()
+				return
+			}
+
+			// handle the other action
+			if d.actionRunner[action] != nil {
+				d.actionRunner[action]()
+				d.ResetAction()
+				return
+			}
+
+			// if there's a keymap that starts with runes in pending, don't reset pending
+			if anyStartWith {
+				return
+			}
+
+			// if it's a digit rune event, save it in pending count
+			if isDigit {
+				d.pendingCount = d.pendingCount*10 + int(event.Rune()-'0')
+				d.pending = d.pending[:len(d.pending)-1]
+				return
 			}
 		}
+
+		// switch event.Key() {
+		// case tcell.KeyUp:
+		// 	d.cursor[0]--
+		// 	if d.cursor[0] < 0 {
+		// 		d.cursor[0] = 0
+		// 	}
+		// case tcell.KeyDown:
+		// 	d.cursor[0]++
+		// 	if d.cursor[0] > len(d.rows) {
+		// 		d.cursor[0] = len(d.rows)
+		// 	}
+		// case tcell.KeyLeft:
+		// 	d.cursor[1]--
+		// 	if d.cursor[1] < 0 {
+		// 		d.cursor[1] = 0
+		// 	}
+		// case tcell.KeyRight:
+		// 	d.cursor[1]++
+		// 	if d.cursor[1] > len(d.headers)-1 {
+		// 		d.cursor[1] = len(d.headers) - 1
+		// 	}
+		// }
 	})
+}
+
+func (d *Dataviewer) GetUpCursor() [2]int {
+	res := [2]int{d.cursor[0] - 1, d.cursor[1]}
+	if res[0] < 0 {
+		return [2]int{0, d.cursor[1]}
+	}
+	return res
+}
+
+func (d *Dataviewer) GetDownCursor() [2]int {
+	res := [2]int{d.cursor[0] + 1, d.cursor[1]}
+	if res[0] > len(d.rows) {
+		return [2]int{len(d.rows), d.cursor[1]}
+	}
+	return res
+}
+
+func (d *Dataviewer) GetLeftCursor() [2]int {
+	res := [2]int{d.cursor[0], d.cursor[1] - 1}
+	if res[1] < 0 {
+		return [2]int{d.cursor[0], 0}
+	}
+	return res
+}
+
+func (d *Dataviewer) GetRightCursor() [2]int {
+	res := [2]int{d.cursor[0], d.cursor[1] + 1}
+	if res[1] > len(d.headers)-1 {
+		return [2]int{d.cursor[0], len(d.headers) - 1}
+	}
+	return res
+}
+
+func (d *Dataviewer) MoveCursorTo(to [2]int) {
+	d.cursor = to
+}
+
+func (d *Dataviewer) ResetAction() {
+	d.pendingAction = ActionNone
+	d.lastMotion = ActionNone
+	d.pending = nil
+	d.pendingCount = 0
+	d.waitingForMotion = false
 }

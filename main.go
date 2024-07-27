@@ -54,7 +54,7 @@ func main() {
 			0, 1, false).
 		AddItem(nil, 0, 1, false)
 
-	d := dataviewer.New(app)
+	d := dataviewer.New(app, km)
 
 	page.AddPage("main", flex, true, false)
 	page.AddPage("data_viewer", d, true, true)

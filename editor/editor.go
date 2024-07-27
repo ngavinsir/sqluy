@@ -18,6 +18,7 @@ import (
 
 	"github.com/gdamore/tcell/v2"
 	"github.com/ngavinsir/sqluy/clipboard"
+	"github.com/ngavinsir/sqluy/vim"
 	"github.com/rivo/tview"
 	"github.com/rivo/uniseg"
 	sitter "github.com/smacker/go-tree-sitter"
@@ -92,8 +93,6 @@ var (
 	//go:embed sql.highlights.scm
 	sqlHighlightsQuery []byte
 
-	asyncMotion = [2]int{-23, -57}
-
 	flashAlphabet = "abcdefghijkmnpqrtwxyzABCDEFGHJKLMNPQRTUVWXY"
 
 	matchBlocks              = []rune{'{', '}', '[', ']', '(', ')', '"', '\'', '`'}
@@ -142,10 +141,6 @@ var (
 	rgMotionW            = regexp.MustCompile(`\s(\S)`)
 	rgMotionE            = regexp.MustCompile(`\S(?:[^\S\n]|$)`)
 )
-
-func isAsyncMotion(c [2]int) bool {
-	return c == asyncMotion
-}
 
 func New(km keymapper, app *tview.Application) *Editor {
 	e := &Editor{
@@ -1144,7 +1139,7 @@ func (e *Editor) InputHandler() func(event *tcell.EventKey, setFocus func(p tvie
 			if action.IsMotion() && (!action.IsCountlessMotion() || e.pendingCount == 0) &&
 				e.motionRunner[action] != nil && (action.IsOperatorlessMotion() || e.pendingAction != ActionNone) {
 				m := e.motionRunner[action]()
-				if isAsyncMotion(m) {
+				if vim.IsAsyncMotion(m) {
 					e.lastMotion = action
 					return
 				}
@@ -1657,7 +1652,7 @@ func (e *Editor) EnableSearch() [2]int {
 	}
 	e.searchEditor = se
 	e.waitingForMotion = true
-	return asyncMotion
+	return vim.AsyncMotion
 }
 
 func (e *Editor) Flash() [2]int {
@@ -1760,12 +1755,12 @@ func (e *Editor) Flash() [2]int {
 	}
 	e.searchEditor = se
 	e.waitingForMotion = true
-	return asyncMotion
+	return vim.AsyncMotion
 }
 
 func (e *Editor) WaitingForMotion() [2]int {
 	e.waitingForMotion = true
-	return asyncMotion
+	return vim.AsyncMotion
 }
 
 func (e *Editor) AcceptRuneTil(r rune) {
