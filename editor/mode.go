@@ -3,22 +3,22 @@ package editor
 type mode uint8
 
 const (
-	normal mode = iota
-	insert
-	replace
-	visual
-	vline
+	ModeNormal mode = iota
+	ModeInsert
+	ModeReplace
+	ModeVisual
+	ModeVLine
 )
 
 func (m mode) String() string {
 	switch m {
-	case insert:
+	case ModeInsert:
 		return "INSERT"
-	case replace:
+	case ModeReplace:
 		return "REPLACE"
-	case visual:
+	case ModeVisual:
 		return "VISUAL"
-	case vline:
+	case ModeVLine:
 		return "V-LINE"
 	default:
 		return "NORMAL"
@@ -27,11 +27,11 @@ func (m mode) String() string {
 
 func (m mode) ShortString() string {
 	switch m {
-	case insert:
+	case ModeInsert:
 		return "i"
-	case replace:
+	case ModeReplace:
 		return "r"
-	case visual, vline:
+	case ModeVisual, ModeVLine:
 		return "v"
 	default:
 		return "n"

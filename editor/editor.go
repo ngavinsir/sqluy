@@ -85,7 +85,7 @@ type (
 		mode                mode
 		oneLineMode         bool
 		waitingForMotion    bool
-		yankOnVisual        bool // for yank indicator utilizng visual mode
+		yankOnVisual        bool // for yank indicator utilizng ModeVisual mode
 	}
 )
 
@@ -191,7 +191,7 @@ WHERE trip_count = 2
 AND start_city = (SELECT city_id FROM cities WHERE name = 'Edinburgh');`, [2]int{3, 8})
 
 	e.onExitFunc = func() {
-		e.mode = normal
+		e.ChangeMode(ModeNormal)
 		e.ResetMotionIndexes()
 	}
 
@@ -199,7 +199,7 @@ AND start_city = (SELECT city_id FROM cities WHERE name = 'Edinburgh');`, [2]int
 		ActionDone: e.Done,
 		ActionExit: e.Exit,
 		ActionInsert: func() {
-			e.ChangeMode(insert)
+			e.ChangeMode(ModeInsert)
 		},
 		ActionRedo:                 e.Redo,
 		ActionUndo:                 e.Undo,
@@ -251,18 +251,18 @@ AND start_city = (SELECT city_id FROM cities WHERE name = 'Edinburgh');`, [2]int
 			}
 		},
 		ActionVisualLine: func() {
-			if e.mode == vline {
-				e.ChangeMode(normal)
+			if e.mode == ModeVLine {
+				e.ChangeMode(ModeNormal)
 				return
 			}
 			e.visualStart = [2]int{e.cursor[0], 0}
-			e.ChangeMode(vline)
+			e.ChangeMode(ModeVLine)
 		},
 		ActionMoveMatchBlock: func() {
 			e.MoveCursorTo(e.GetMatchingBlock(e.cursor))
 		},
 		ActionReplace: func() {
-			e.ChangeMode(replace)
+			e.ChangeMode(ModeReplace)
 		},
 		ActionMoveNextSearch: func() {
 			e.MoveMotion('n', e.getActionCount())
@@ -271,7 +271,7 @@ AND start_city = (SELECT city_id FROM cities WHERE name = 'Edinburgh');`, [2]int
 			e.MoveMotion('n', -e.getActionCount())
 		},
 		ActionSwitchVisualStart: func() {
-			if e.mode != visual {
+			if e.mode != ModeVisual {
 				return
 			}
 
@@ -733,10 +733,10 @@ func (e *Editor) Draw(screen tcell.Screen) {
 	} else {
 		modeColor := tcell.ColorLightGray
 		// modeBg := tcell.ColorWhite
-		if e.mode == insert {
+		if e.mode == ModeInsert {
 			modeColor = tcell.ColorGreen
 			// modeBg = tcell.ColorLightGreen
-		} else if e.mode == replace {
+		} else if e.mode == ModeReplace {
 			modeColor = tcell.ColorPink
 			// modeBg = tcell.ColorPurple
 		}
@@ -959,9 +959,9 @@ func (e *Editor) Draw(screen tcell.Screen) {
 
 	if e.searchEditor == nil {
 		cursorStyle := tcell.CursorStyleSteadyBlock
-		if e.mode == insert {
+		if e.mode == ModeInsert {
 			cursorStyle = tcell.CursorStyleSteadyBar
-		} else if e.mode == replace {
+		} else if e.mode == ModeReplace {
 			cursorStyle = tcell.CursorStyleSteadyUnderline
 		}
 		screen.SetCursorStyle(cursorStyle)
@@ -992,24 +992,24 @@ func (e *Editor) InputHandler() func(event *tcell.EventKey, setFocus func(p tvie
 
 		// handle unkeymappable actions first, e.g. rune events on insert mode
 		switch e.mode {
-		case replace:
+		case ModeReplace:
 			switch key := event.Key(); key {
 			case tcell.KeyEsc:
-				e.ChangeMode(normal)
+				e.ChangeMode(ModeNormal)
 				return
 			case tcell.KeyRune:
 				text := string(event.Rune())
 				from := e.cursor
 				until := [2]int{e.cursor[0], e.cursor[1] + 1}
 				e.ReplaceText(text, from, until)
-				e.mode = normal
+				e.mode = ModeNormal
 				return
 			}
 
-		case insert:
+		case ModeInsert:
 			switch key := event.Key(); key {
 			case tcell.KeyEsc:
-				e.mode = normal
+				e.mode = ModeNormal
 				if e.cursor[1] == len(e.spansPerLines[e.cursor[0]])-1 {
 					e.MoveCursorLeft()
 				}
@@ -1109,11 +1109,11 @@ func (e *Editor) InputHandler() func(event *tcell.EventKey, setFocus func(p tvie
 			}
 
 			// handle operators actions
-			// no need to wait for motion action in visual mode
-			if action.IsOperator() && (e.mode == visual || e.mode == vline) && action != ActionVisual && action != ActionVisualLine {
+			// no need to wait for motion action in ModeVisual mode
+			if action.IsOperator() && (e.mode == ModeVisual || e.mode == ModeVLine) && action != ActionVisual && action != ActionVisualLine {
 				prevMode := e.mode
 
-				if e.mode == vline {
+				if e.mode == ModeVLine {
 					if e.cursor[0] > e.visualStart[0] || (e.cursor[0] == e.visualStart[0] && e.cursor[1] > e.visualStart[1]) {
 						e.cursor, e.visualStart = e.visualStart, e.cursor
 					}
@@ -1123,7 +1123,7 @@ func (e *Editor) InputHandler() func(event *tcell.EventKey, setFocus func(p tvie
 
 				e.operatorRunner[action](e.visualStart)
 				if e.mode == prevMode {
-					e.mode = normal
+					e.mode = ModeNormal
 				}
 				e.ResetAction()
 				return
@@ -1358,7 +1358,7 @@ func (e *Editor) MoveCursorHalfPageDown() {
 	}
 
 	blockOffset := 0
-	if e.mode == insert {
+	if e.mode == ModeInsert {
 		blockOffset = 1
 	}
 	halfPageDownRowX := 0
@@ -1437,7 +1437,7 @@ func (e *Editor) MoveCursorHalfPageUp() {
 	}
 
 	blockOffset := 0
-	if e.mode == insert {
+	if e.mode == ModeInsert {
 		blockOffset = 1
 	}
 	halfPageUpRowX := 0
@@ -1493,7 +1493,7 @@ func (e *Editor) GetLineCursor(n int) [2]int {
 	}
 
 	blockOffset := 0
-	if e.mode == insert || e.mode == vline || e.mode == visual || e.pendingAction == ActionVisual || e.pendingAction == ActionVisualLine {
+	if e.mode == ModeInsert || e.mode == ModeVLine || e.mode == ModeVisual || e.pendingAction == ActionVisual || e.pendingAction == ActionVisualLine {
 		blockOffset = 1
 	}
 	targetRowX := 0
@@ -1639,7 +1639,7 @@ func (e *Editor) EnableSearch() [2]int {
 	se.SetText("", [2]int{0, 0})
 	se.SetRect(x, y+h-1, w, 1)
 	se.SetDelayDrawFunc(e.delayDrawFunc)
-	se.mode = insert
+	se.mode = ModeInsert
 	se.onDoneFunc = func(s string) {
 		e.buildSearchIndexes('n', regexp.QuoteMeta(s), 0, 0, 0)
 		e.operatorRunner[e.pendingAction](e.GetSearchCursor())
@@ -1661,7 +1661,7 @@ func (e *Editor) Flash() [2]int {
 	se.SetText("", [2]int{0, 0})
 	se.SetRect(x, y+h-1, w, 1)
 	se.SetDelayDrawFunc(e.delayDrawFunc)
-	se.mode = insert
+	se.mode = ModeInsert
 	se.onDoneFunc = func(s string) {
 		e.searchEditor = nil
 		e.ResetAction()
@@ -1921,7 +1921,7 @@ func (e *Editor) InsertBelow() {
 	e.cursor[1] = 0
 	e.SaveChanges()
 	e.undoOffset--
-	e.mode = insert
+	e.mode = ModeInsert
 }
 
 func (e *Editor) InsertAbove() {
@@ -1930,11 +1930,11 @@ func (e *Editor) InsertAbove() {
 	e.cursor[1] = 0
 	e.SaveChanges()
 	e.undoOffset--
-	e.mode = insert
+	e.mode = ModeInsert
 }
 
 func (e *Editor) ChangeUntil(until [2]int) {
-	e.mode = insert
+	e.mode = ModeInsert
 	e.DeleteUntil(until)
 }
 
@@ -1948,13 +1948,13 @@ func (e *Editor) DeleteUntil(until [2]int) {
 }
 
 func (e *Editor) YankUntil(until [2]int) {
-	if e.yankOnVisual || e.mode == visual || e.mode == vline {
+	if e.yankOnVisual || e.mode == ModeVisual || e.mode == ModeVLine {
 		e.yankOnVisual = false
-		if e.mode != visual && e.mode != vline {
+		if e.mode != ModeVisual && e.mode != ModeVLine {
 			return
 		}
 
-		e.mode = normal
+		e.mode = ModeNormal
 		until := e.cursor
 		from := e.visualStart
 		if until[0] < from[0] || (until[0] == from[0] && until[1] < from[1]) {
@@ -1973,14 +1973,14 @@ func (e *Editor) YankUntil(until [2]int) {
 }
 
 func (e *Editor) VisualUntil(until [2]int) {
-	if e.mode == visual {
-		e.mode = normal
+	if e.mode == ModeVisual {
+		e.mode = ModeNormal
 		return
 	}
 
 	e.visualStart = e.cursor
 	e.MoveCursorTo(until)
-	e.ChangeMode(visual)
+	e.ChangeMode(ModeVisual)
 }
 
 func (e *Editor) ChangeUntilEndOfLine() {
@@ -2023,12 +2023,12 @@ func (e *Editor) DeleteLine() {
 }
 
 func (e *Editor) InsertAfter() {
-	e.mode = insert
+	e.mode = ModeInsert
 	e.MoveCursorRight()
 }
 
 func (e *Editor) InsertEndOfLine() {
-	e.mode = insert
+	e.mode = ModeInsert
 	e.MoveCursorEndOfLine()
 }
 
@@ -2111,7 +2111,7 @@ func (e *Editor) GetInsideOrAroundCursor() [2]int {
 	}
 
 	mode := e.mode
-	e.ChangeMode(visual)
+	e.ChangeMode(ModeVisual)
 	e.MoveCursorTo([2]int{e.motionIndexes['s'][0][0], e.motionIndexes['s'][0][1]})
 	e.ChangeMode(mode)
 
@@ -2318,7 +2318,7 @@ func (e *Editor) flashDecorator(x, y, width, height int) {
 }
 
 func (e *Editor) visualDecorator(x, y, width, height int) {
-	if e.mode != visual && e.mode != vline {
+	if e.mode != ModeVisual && e.mode != ModeVLine {
 		return
 	}
 
@@ -2348,11 +2348,11 @@ func (e *Editor) visualDecorator(x, y, width, height int) {
 				break
 			}
 
-			if (e.mode == visual &&
+			if (e.mode == ModeVisual &&
 				(row == from[0] && col >= from[1] && row == until[0] && col <= until[1]) ||
 				(row == from[0] && row < until[0] && col >= from[1]) ||
 				(row > from[0] && row < until[0]) || (row == until[0] && row > from[0] && col <= until[1])) ||
-				(e.mode == vline &&
+				(e.mode == ModeVLine &&
 					(row >= from[0] && row <= until[0])) {
 				e.decorations[[2]int{row, col}] = decoration{style: style, text: ""}
 			}

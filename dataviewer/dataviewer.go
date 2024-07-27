@@ -8,6 +8,7 @@ import (
 	"unicode"
 
 	"github.com/gdamore/tcell/v2"
+	"github.com/ngavinsir/sqluy/editor"
 	"github.com/ngavinsir/sqluy/vim"
 	"github.com/rivo/tview"
 	"github.com/rivo/uniseg"
@@ -21,6 +22,7 @@ type (
 	Dataviewer struct {
 		keymapper    keymapper
 		actionRunner map[Action]func()
+		app          *tview.Application
 		*tview.Box
 		operatorRunner   map[Action]func(target [2]int)
 		motionRunner     map[Action]func() [2]int
@@ -45,6 +47,7 @@ type (
 		visibleLeft      int
 		waitingForMotion bool
 		mode             mode
+		searchEditor     *editor.Editor
 	}
 )
 
@@ -71,10 +74,12 @@ func New(app *tview.Application, km keymapper) *Dataviewer {
 
 	d := &Dataviewer{
 		keymapper: km,
+		app:       app,
 		Box:       tview.NewBox().SetBorder(true).SetTitle("Dataviewer").SetTitleAlign(tview.AlignLeft),
-		// headers: headers,
-		headers:      []string{"password", "eyeColor", "ein", "gender", "id", "macAddress", "hair", "role", "email", "height", "company", "age", "ssn", "bloodGroup", "ip", "university", "maidenName", "image", "lastName", "username", "phone", "userAgent", "birthDate", "firstName", "address", "crypto", "bank", "weight"},
-		rows:         items[:30],
+		headers:   headers,
+		// headers:      []string{"password", "eyeColor", "ein", "gender", "id", "macAddress", "hair", "role", "email", "height", "company", "age", "ssn", "bloodGroup", "ip", "university", "maidenName", "image", "lastName", "username", "phone", "userAgent", "birthDate", "firstName", "address", "crypto", "bank", "weight"},
+		// rows:         items[:30],
+		rows:         items,
 		bgColor:      tview.Styles.PrimitiveBackgroundColor,
 		borderColor:  tcell.ColorGray,
 		textColor:    tcell.ColorWhite,
@@ -132,8 +137,7 @@ func (d *Dataviewer) Draw(screen tcell.Screen) {
 	textY += d.getHeaderHeight() + 1
 	textX = x
 	defer func() {
-		tview.Print(screen, fmt.Sprintf(" O:%+v ", d.offsets), x+2, y+h, 10, tview.AlignLeft, tcell.ColorWhite)
-		tview.Print(screen, fmt.Sprintf(" C:%+v ", d.cursor), x+12, y+h, 10, tview.AlignLeft, tcell.ColorWhite)
+		tview.Print(screen, fmt.Sprintf(" x:%d/%d y:%d/%d ", d.cursor[1], len(d.headers)-1, d.cursor[0], len(d.rows)), x+2, y+h, 20, tview.AlignLeft, tcell.ColorWhite)
 	}()
 
 	// adjust offset if cursor hidden on the top
@@ -685,6 +689,25 @@ func (d *Dataviewer) GetLastLineCursor() [2]int {
 
 func (d *Dataviewer) MoveCursorTo(to [2]int) {
 	d.cursor = to
+}
+
+func (d *Dataviewer) EnableSearch() [2]int {
+	x, y, w, h := d.Box.GetInnerRect()
+	se := editor.New(d.keymapper, d.app).SetOneLineMode(true)
+	se.SetText("", [2]int{0, 0})
+	se.SetRect(x, y+h-1, w, 1)
+	se.ChangeMode(editor.Mode)
+	se.onDoneFunc = func(s string) {
+		d.searchEditor = nil
+		d.ResetAction()
+	}
+	se.onExitFunc = func() {
+		d.searchEditor = nil
+		d.ResetAction()
+	}
+	d.searchEditor = se
+	d.waitingForMotion = true
+	return vim.AsyncMotion
 }
 
 func (d *Dataviewer) ResetAction() {
