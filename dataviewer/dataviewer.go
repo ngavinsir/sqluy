@@ -88,15 +88,15 @@ func New(app *tview.Application, km keymapper) *Dataviewer {
 	}
 
 	d.motionRunner = map[Action]func() [2]int{
-		// ActionMoveEndOfLine:          d.GetEndOfLineCursor,
-		// ActionMoveStartOfLine:        d.GetStartOfLineCursor,
+		ActionMoveEndOfLine:   d.GetEndOfLineCursor,
+		ActionMoveStartOfLine: d.GetStartOfLineCursor,
 		// ActionMoveFirstNonWhitespace: d.GetFirstNonWhitespaceCursor,
-		ActionMoveDown:  d.GetDownCursor,
-		ActionMoveUp:    d.GetUpCursor,
-		ActionMoveLeft:  d.GetLeftCursor,
-		ActionMoveRight: d.GetRightCursor,
-		// ActionMoveLastLine:           d.GetLastLineCursor,
-		// ActionMoveFirstLine:          d.GetFirstLineCursor,
+		ActionMoveDown:      d.GetDownCursor,
+		ActionMoveUp:        d.GetUpCursor,
+		ActionMoveLeft:      d.GetLeftCursor,
+		ActionMoveRight:     d.GetRightCursor,
+		ActionMoveLastLine:  d.GetLastLineCursor,
+		ActionMoveFirstLine: d.GetFirstLineCursor,
 		// ActionMoveStartOfWord:        d.GetStartOfWordCursor,
 		// ActionMoveStartOfBigWord:     d.GetStartOfBigWordCursor,
 		// ActionMoveEndOfBigWord:       d.GetEndOfBigWordCursor,
@@ -665,6 +665,22 @@ func (d *Dataviewer) GetRightCursor() [2]int {
 		return [2]int{d.cursor[0], len(d.headers) - 1}
 	}
 	return res
+}
+
+func (d *Dataviewer) GetEndOfLineCursor() [2]int {
+	return [2]int{d.cursor[0], len(d.headers) - 1}
+}
+
+func (d *Dataviewer) GetStartOfLineCursor() [2]int {
+	return [2]int{d.cursor[0], 0}
+}
+
+func (d *Dataviewer) GetFirstLineCursor() [2]int {
+	return [2]int{0, d.cursor[1]}
+}
+
+func (d *Dataviewer) GetLastLineCursor() [2]int {
+	return [2]int{len(d.rows), d.cursor[1]}
 }
 
 func (d *Dataviewer) MoveCursorTo(to [2]int) {

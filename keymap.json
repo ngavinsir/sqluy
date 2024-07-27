@@ -3,6 +3,27 @@
     "dataviewer": [
       {
         "keys": [
+          "G"
+        ],
+        "groups": [
+          "r",
+          "h"
+        ],
+        "action": "move_last_line"
+      },
+      {
+        "keys": [
+          "g",
+          "g"
+        ],
+        "groups": [
+          "r",
+          "h"
+        ],
+        "action": "move_first_line"
+      },
+      {
+        "keys": [
           "down"
         ],
         "groups": [
@@ -45,6 +66,26 @@
           "h"
         ],
         "action": "move_left"
+      },
+      {
+        "keys": [
+          "$"
+        ],
+        "groups": [
+          "r",
+          "h"
+        ],
+        "action": "move_end_of_line"
+      },
+      {
+        "keys": [
+          "0"
+        ],
+        "groups": [
+          "r",
+          "h"
+        ],
+        "action": "move_start_of_line"
       }
     ],
     "editor": [
