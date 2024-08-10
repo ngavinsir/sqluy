@@ -696,15 +696,15 @@ func (d *Dataviewer) EnableSearch() [2]int {
 	se := editor.New(d.keymapper, d.app).SetOneLineMode(true)
 	se.SetText("", [2]int{0, 0})
 	se.SetRect(x, y+h-1, w, 1)
-	se.ChangeMode(editor.Mode)
-	se.onDoneFunc = func(s string) {
-		d.searchEditor = nil
-		d.ResetAction()
-	}
-	se.onExitFunc = func() {
-		d.searchEditor = nil
-		d.ResetAction()
-	}
+	se.ChangeMode(editor.ModeInsert)
+	// se.onDoneFunc = func(s string) {
+	// 	d.searchEditor = nil
+	// 	d.ResetAction()
+	// }
+	// se.onExitFunc = func() {
+	// 	d.searchEditor = nil
+	// 	d.ResetAction()
+	// }
 	d.searchEditor = se
 	d.waitingForMotion = true
 	return vim.AsyncMotion
