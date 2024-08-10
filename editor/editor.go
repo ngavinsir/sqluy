@@ -4,6 +4,7 @@ import (
 	"context"
 	_ "embed"
 	"fmt"
+	"log"
 	"os"
 	"regexp"
 	"slices"
@@ -142,14 +143,15 @@ var (
 	rgMotionE            = regexp.MustCompile(`\S(?:[^\S\n]|$)`)
 )
 
-func New(km keymapper, app *tview.Application) *Editor {
+func New(options ...func(*Editor)) *Editor {
 	e := &Editor{
 		tabSize:          4,
 		Box:              tview.NewBox().SetBorder(true).SetTitle("Editor").SetTitleAlign(tview.AlignLeft),
-		keymapper:        km,
-		app:              app,
 		decorations:      make(map[[2]int]decoration),
 		highlightIndexes: make(map[[2]int]string),
+	}
+	for _, option := range options {
+		option(e)
 	}
 	// e.SetText("amsok", [2]int{0, 0})
 	e.SetText(`WITH RECURSIVE trip AS (
@@ -1069,6 +1071,8 @@ func (e *Editor) InputHandler() func(event *tcell.EventKey, setFocus func(p tvie
 			eventName = strings.ToLower(eventName)
 		}
 		e.pending = append(e.pending, eventName)
+		log.Printf("event name: %s\n", eventName)
+		log.Printf("event key: %d\n", event.Key())
 
 		// get group
 		group := e.mode.ShortString()
@@ -1636,7 +1640,7 @@ func (e *Editor) Redo() {
 
 func (e *Editor) EnableSearch() [2]int {
 	x, y, w, h := e.Box.GetInnerRect()
-	se := New(e.keymapper, e.app).SetOneLineMode(true)
+	se := New(WithKeymapper(e.keymapper), WithApp(e.app)).SetOneLineMode(true)
 	se.SetText("", [2]int{0, 0})
 	se.SetRect(x, y+h-1, w, 1)
 	se.SetDelayDrawFunc(e.delayDrawFunc)
@@ -1658,7 +1662,7 @@ func (e *Editor) EnableSearch() [2]int {
 
 func (e *Editor) Flash() [2]int {
 	x, y, w, h := e.Box.GetInnerRect()
-	se := New(e.keymapper, e.app).SetOneLineMode(true)
+	se := New(WithKeymapper(e.keymapper), WithApp(e.app)).SetOneLineMode(true)
 	se.SetText("", [2]int{0, 0})
 	se.SetRect(x, y+h-1, w, 1)
 	se.SetDelayDrawFunc(e.delayDrawFunc)

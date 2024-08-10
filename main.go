@@ -10,6 +10,7 @@ import (
 	"github.com/gdamore/tcell/v2"
 	"github.com/ngavinsir/sqluy/dataviewer"
 	"github.com/ngavinsir/sqluy/editor"
+	"github.com/ngavinsir/sqluy/fetcher"
 	"github.com/ngavinsir/sqluy/flex"
 	"github.com/ngavinsir/sqluy/keymap"
 	"github.com/rivo/tview"
@@ -31,12 +32,36 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	km := keymap.New(keymapString)
 
+	app.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
+		if event.Key() == tcell.KeyLF {
+			return tcell.NewEventKey(tcell.KeyEnter, 0, tcell.ModCtrl)
+		}
+		return event
+	})
+
 	modalChan := make(chan ShowModalArg)
 	delayDrawChan := make(chan time.Time)
 
 	page := tview.NewPages()
 
-	e := editor.New(km, app)
+	d := dataviewer.New(app, km)
+
+	sqliteFetcher := fetcher.NewSqliteFetcher()
+
+	flex := flex.New().SetDirection(tview.FlexRow)
+	e := editor.New(
+		editor.WithKeymapper(km),
+		editor.WithApp(app),
+		editor.WithDoneFunc(func(s string) {
+			cols, rows, err := sqliteFetcher.Select(ctx, s)
+			if err != nil {
+				modalChan <- ShowModalArg{Text: err.Error(), Refocus: flex}
+				return
+			}
+
+			d.SetData(cols, rows)
+		}),
+	)
 	e.SetViewModalFunc(func(text string) {
 		modalChan <- ShowModalArg{Text: text, Refocus: e}
 	})
@@ -44,9 +69,7 @@ func main() {
 		delayDrawChan <- t
 	})
 
-	d := dataviewer.New(app, km)
-
-	flex := flex.New().SetDirection(tview.FlexRow).
+	flex.
 		AddItem(e, 0, 1, false).
 		AddItem(d, 0, 1, true)
 

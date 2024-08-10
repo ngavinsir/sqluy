@@ -191,6 +191,15 @@
       },
       {
         "keys": [
+          "ctrl+enter"
+        ],
+        "groups": [
+          "n"
+        ],
+        "action": "done"
+      },
+      {
+        "keys": [
           "enter"
         ],
         "groups": [

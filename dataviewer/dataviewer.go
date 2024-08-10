@@ -1,17 +1,13 @@
 package dataviewer
 
 import (
-	"context"
 	_ "embed"
-	"encoding/json"
 	"fmt"
-	"log"
 	"strings"
 	"unicode"
 
 	"github.com/gdamore/tcell/v2"
 	"github.com/ngavinsir/sqluy/editor"
-	"github.com/ngavinsir/sqluy/fetcher"
 	"github.com/ngavinsir/sqluy/vim"
 	"github.com/rivo/tview"
 	"github.com/rivo/uniseg"
@@ -23,89 +19,48 @@ type (
 	}
 
 	Dataviewer struct {
-		keymapper    keymapper
-		actionRunner map[Action]func()
-		app          *tview.Application
+		keymapper  keymapper
+		runeRunner map[Action]func(r rune)
+		app        *tview.Application
 		*tview.Box
 		operatorRunner   map[Action]func(target [2]int)
 		motionRunner     map[Action]func() [2]int
-		runeRunner       map[Action]func(r rune)
+		actionRunner     map[Action]func()
+		searchEditor     *editor.Editor
 		pending          []string
 		rowHeights       []int
 		rows             []map[string]string
 		headers          []string
 		colWidths        []int
-		cursor           [2]int
-		offsets          [2]int
 		visualStart      [2]int
-		visibleTop       int
-		textColor        tcell.Color
+		offsets          [2]int
+		cursor           [2]int
+		lastMotion       Action
 		borderColor      tcell.Color
 		bgColor          tcell.Color
 		pendingAction    Action
-		lastMotion       Action
+		textColor        tcell.Color
 		pendingCount     int
 		visibleRight     int
 		visibleBottom    int
 		visibleLeft      int
+		visibleTop       int
 		waitingForMotion bool
 		mode             mode
-		searchEditor     *editor.Editor
 	}
 )
 
-//go:embed sample.json
-var sampleItems []byte
-
 func New(app *tview.Application, km keymapper) *Dataviewer {
-	var items []map[string]any
-	err := json.Unmarshal(sampleItems, &items)
-	if err != nil {
-		panic(err)
-	}
-	var stringItems []map[string]string
-	for _, item := range items {
-		m := make(map[string]string)
-		for k, v := range item {
-			m[k] = fmt.Sprintf("%v", v)
-		}
-		stringItems = append(stringItems, m)
-	}
-
-	var headers []string
-	m := make(map[string]struct{})
-	for _, i := range items {
-		for k := range i {
-			m[k] = struct{}{}
-		}
-	}
-	for k := range m {
-		headers = append(headers, k)
-	}
-
 	d := &Dataviewer{
-		keymapper: km,
-		app:       app,
-		Box:       tview.NewBox().SetBorder(true).SetTitle("Dataviewer").SetTitleAlign(tview.AlignLeft),
-		headers:   headers,
-		// headers:      []string{"password", "eyeColor", "ein", "gender", "id", "macAddress", "hair", "role", "email", "height", "company", "age", "ssn", "bloodGroup", "ip", "university", "maidenName", "image", "lastName", "username", "phone", "userAgent", "birthDate", "firstName", "address", "crypto", "bank", "weight"},
-		// rows:         items[:30],
-		rows:         stringItems,
+		keymapper:    km,
+		app:          app,
+		Box:          tview.NewBox().SetBorder(true).SetTitle("Dataviewer").SetTitleAlign(tview.AlignLeft),
 		bgColor:      tview.Styles.PrimitiveBackgroundColor,
 		borderColor:  tcell.ColorGray,
 		textColor:    tcell.ColorWhite,
 		visibleLeft:  -1,
 		visibleRight: -1,
 	}
-	fmt.Printf("headers: []string{\"%s\"}\n", strings.Join(headers, "\", \""))
-
-	s := fetcher.NewSqliteFetcher()
-	cols, rows, err := s.Select(context.Background(), "select * from album;")
-	if err != nil {
-		log.Fatal(err)
-	}
-	d.headers = cols
-	d.rows = rows
 
 	d.operatorRunner = map[Action]func(target [2]int){
 		ActionNone: d.MoveCursorTo,
@@ -142,13 +97,23 @@ func New(app *tview.Application, km keymapper) *Dataviewer {
 	return d
 }
 
+func (d *Dataviewer) SetData(headers []string, rows []map[string]string) {
+	d.headers = headers
+	d.rows = rows
+	d.cursor = [2]int{0, 0}
+	d.offsets = [2]int{0, 0}
+}
+
 func (d *Dataviewer) Draw(screen tcell.Screen) {
 	defer func() {
 		fmt.Printf("cursor: %+v, offsets: %+v\n", d.cursor, d.offsets)
 		// fmt.Printf("vis left: %d, vis right: %d, colWidths: %+v\n", d.visibleLeft, d.visibleRight, d.colWidths)
 	}()
 	d.Box.DrawForSubclass(screen, d)
-	fmt.Println("draw")
+
+	if d.headers == nil {
+		return
+	}
 
 	x, y, w, h := d.Box.GetInnerRect()
 	textX := x
@@ -712,7 +677,7 @@ func (d *Dataviewer) MoveCursorTo(to [2]int) {
 
 func (d *Dataviewer) EnableSearch() [2]int {
 	x, y, w, h := d.Box.GetInnerRect()
-	se := editor.New(d.keymapper, d.app).SetOneLineMode(true)
+	se := editor.New(editor.WithKeymapper(d.keymapper), editor.WithApp(d.app)).SetOneLineMode(true)
 	se.SetText("", [2]int{0, 0})
 	se.SetRect(x, y+h-1, w, 1)
 	se.ChangeMode(editor.ModeInsert)
