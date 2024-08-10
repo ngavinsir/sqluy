@@ -10,6 +10,7 @@ import (
 	"github.com/gdamore/tcell/v2"
 	"github.com/ngavinsir/sqluy/dataviewer"
 	"github.com/ngavinsir/sqluy/editor"
+	"github.com/ngavinsir/sqluy/flex"
 	"github.com/ngavinsir/sqluy/keymap"
 	"github.com/rivo/tview"
 )
@@ -42,8 +43,13 @@ func main() {
 	e.SetDelayDrawFunc(func(t time.Time) {
 		delayDrawChan <- t
 	})
-	flex := tview.NewFlex().
-		AddItem(e, 0, 1, true)
+
+	d := dataviewer.New(app, km)
+
+	flex := flex.New().SetDirection(tview.FlexRow).
+		AddItem(e, 0, 1, false).
+		AddItem(d, 0, 1, true)
+
 	modal := tview.NewModal().AddButtons([]string{"Ok"})
 	modalFlex := tview.NewFlex().
 		AddItem(nil, 0, 1, false).
@@ -54,10 +60,7 @@ func main() {
 			0, 1, false).
 		AddItem(nil, 0, 1, false)
 
-	d := dataviewer.New(app, km)
-
-	page.AddPage("main", flex, true, false)
-	page.AddPage("data_viewer", d, true, true)
+	page.AddPage("main", flex, true, true)
 	page.AddPage("modal", modalFlex, true, false)
 	page.SetRect(0, 0, 31, 27)
 

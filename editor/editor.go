@@ -811,7 +811,7 @@ func (e *Editor) Draw(screen tcell.Screen) {
 		row += e.offsets[0]
 
 		// highlight current cursor line
-		if !e.oneLineMode && row == e.cursor[0] {
+		if e.HasFocus() && !e.oneLineMode && row == e.cursor[0] {
 			highlightWidth := w
 			if !e.oneLineMode {
 				highlightWidth += lineNumberWidth
@@ -832,7 +832,7 @@ func (e *Editor) Draw(screen tcell.Screen) {
 			}
 			lineNumberText := fmt.Sprintf("%*d", lineNumberDigit, lineNumber)
 			lineNumberColor := tcell.ColorSlateGray
-			if row == e.cursor[0] {
+			if e.HasFocus() && row == e.cursor[0] {
 				lineNumberColor = tcell.ColorOrange
 			}
 			tview.Print(screen, lineNumberText, x, textY, lineNumberWidth, tview.AlignLeft, lineNumberColor)
@@ -851,7 +851,7 @@ func (e *Editor) Draw(screen tcell.Screen) {
 				fg, bg, _ := d.style.Decompose()
 				if bg == tcell.ColorDefault {
 					d.style = d.style.Background(tview.Styles.PrimitiveBackgroundColor)
-					if e.cursor[0] == row {
+					if e.HasFocus() && e.cursor[0] == row {
 						d.style = d.style.Background(tcell.ColorGray)
 					}
 				}
@@ -896,7 +896,7 @@ func (e *Editor) Draw(screen tcell.Screen) {
 			// print decoration bg
 			if hasDecoration {
 				_, bg, _ := d.style.Decompose()
-				if !e.oneLineMode && row == e.cursor[0] && bg == tcell.ColorDefault {
+				if e.HasFocus() && !e.oneLineMode && row == e.cursor[0] && bg == tcell.ColorDefault {
 					bg = tcell.ColorGray
 				}
 				for i := range span.width {
@@ -921,11 +921,11 @@ func (e *Editor) Draw(screen tcell.Screen) {
 						style = style.Background(tview.Styles.PrimitiveBackgroundColor)
 					}
 				}
-				if !e.oneLineMode && row == e.cursor[0] && dBg == tcell.ColorDefault {
+				if e.HasFocus() && !e.oneLineMode && row == e.cursor[0] && dBg == tcell.ColorDefault {
 					style = style.Background(tcell.ColorGray)
 				}
 
-				if runes[0] != '\t' {
+				if runes != nil && runes[0] != '\t' {
 					screen.SetContent(
 						textX-e.offsets[1],
 						textY,
@@ -957,7 +957,8 @@ func (e *Editor) Draw(screen tcell.Screen) {
 		textX = x
 	}
 
-	if e.searchEditor == nil {
+	// draw cursor
+	if e.HasFocus() && e.searchEditor == nil {
 		cursorStyle := tcell.CursorStyleSteadyBlock
 		if e.mode == ModeInsert {
 			cursorStyle = tcell.CursorStyleSteadyBar
