@@ -238,7 +238,7 @@ bottomOffset:
 				break
 			}
 
-			if d.cursor == [2]int{i + 1, j} {
+			if d.HasFocus() && d.cursor == [2]int{i + 1, j} {
 				defer d.drawCell(screen, i, j, textX, textY, colWidth, 2+textHeight, firstRowOffset, text)
 			} else {
 				d.drawCell(screen, i, j, textX, textY, colWidth, 2+textHeight, firstRowOffset, text)
@@ -263,7 +263,7 @@ bottomOffset:
 
 		colWidth := d.getColWidth(i)
 
-		if d.cursor == [2]int{0, i} {
+		if d.HasFocus() && d.cursor == [2]int{0, i} {
 			defer d.drawHeader(screen, i, textX, textY, colWidth, 2+headerHeight, header)
 		} else {
 			d.drawHeader(screen, i, textX, textY, colWidth, 2+headerHeight, header)
@@ -393,7 +393,7 @@ func (d *Dataviewer) drawCell(screen tcell.Screen, i, j, x, y, colWidth, height,
 	textColor := d.textColor
 	borderColor := d.borderColor
 	bgColor := d.bgColor
-	if d.cursor == [2]int{i + 1, j} {
+	if d.HasFocus() && d.cursor == [2]int{i + 1, j} {
 		textColor = tcell.ColorBlack
 		borderColor = tcell.ColorBlack
 		bgColor = tcell.ColorYellow
@@ -449,7 +449,7 @@ func (d *Dataviewer) drawHeader(screen tcell.Screen, i, x, y, colWidth, height i
 	textColor := d.bgColor
 	borderColor := d.borderColor
 	bgColor := d.textColor
-	if d.cursor == [2]int{0, i} {
+	if d.HasFocus() && d.cursor == [2]int{0, i} {
 		textColor = tcell.ColorBlack
 		borderColor = tcell.ColorBlack
 		bgColor = tcell.ColorYellow
