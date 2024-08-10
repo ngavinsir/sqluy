@@ -1,6 +1,8 @@
 package flex
 
 import (
+	"reflect"
+
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
 )
@@ -89,6 +91,16 @@ func (f *Flex) SetFullScreen(fullScreen bool) *Flex {
 // space but nothing will be drawn.
 func (f *Flex) AddItem(item tview.Primitive, fixedSize, proportion int, focus bool) *Flex {
 	f.items = append(f.items, &flexItem{Item: item, FixedSize: fixedSize, Proportion: proportion, Focus: focus})
+
+	box := f.getBoxFromPrimitive(item)
+	if box != nil {
+		if focus {
+			box.SetBorderColor(tcell.ColorWhite)
+		} else {
+			box.SetBorderColor(tcell.ColorGray)
+		}
+	}
+
 	return f
 }
 
@@ -302,9 +314,43 @@ func (f *Flex) SetFocusIndex(index int) {
 	}
 
 	for i, item := range f.items {
+		if item.Item == nil {
+			continue
+		}
+
 		item.Focus = i == index
-		if i == index && f.focusDelegate != nil {
+		if item.Focus && f.focusDelegate != nil {
 			f.Focus(f.focusDelegate)
 		}
+
+		box := f.getBoxFromPrimitive(item.Item)
+		if box == nil {
+			continue
+		}
+		if item.Focus {
+			box.SetBorderColor(tcell.ColorWhite)
+		} else {
+			box.SetBorderColor(tcell.ColorGray)
+		}
 	}
+}
+
+func (f *Flex) getBoxFromPrimitive(p tview.Primitive) *tview.Box {
+	if p == nil {
+		return nil
+	}
+
+	boxType := reflect.TypeOf(&tview.Box{})
+
+	val := reflect.ValueOf(p)
+	if val.Kind() == reflect.Ptr || val.Kind() == reflect.Interface {
+		val = val.Elem()
+	}
+
+	for i := 0; i < val.NumField(); i++ {
+		if f := val.Field(i); f.Type() == boxType {
+			return f.Interface().(*tview.Box)
+		}
+	}
+	return nil
 }
