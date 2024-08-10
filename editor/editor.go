@@ -2019,10 +2019,6 @@ func (e *Editor) DeleteLine() {
 		until = [2]int{e.cursor[0], len(e.spansPerLines[e.cursor[0]]) - 1}
 	}
 	e.ReplaceText("", from, until)
-	e.cursor[0]--
-	if e.cursor[0] < 0 {
-		e.cursor[0] = 0
-	}
 	e.SaveChanges()
 	e.undoOffset--
 }
