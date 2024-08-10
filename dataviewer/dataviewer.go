@@ -1,14 +1,17 @@
 package dataviewer
 
 import (
+	"context"
 	_ "embed"
 	"encoding/json"
 	"fmt"
+	"log"
 	"strings"
 	"unicode"
 
 	"github.com/gdamore/tcell/v2"
 	"github.com/ngavinsir/sqluy/editor"
+	"github.com/ngavinsir/sqluy/fetcher"
 	"github.com/ngavinsir/sqluy/vim"
 	"github.com/rivo/tview"
 	"github.com/rivo/uniseg"
@@ -29,7 +32,7 @@ type (
 		runeRunner       map[Action]func(r rune)
 		pending          []string
 		rowHeights       []int
-		rows             []map[string]any
+		rows             []map[string]string
 		headers          []string
 		colWidths        []int
 		cursor           [2]int
@@ -60,6 +63,14 @@ func New(app *tview.Application, km keymapper) *Dataviewer {
 	if err != nil {
 		panic(err)
 	}
+	var stringItems []map[string]string
+	for _, item := range items {
+		m := make(map[string]string)
+		for k, v := range item {
+			m[k] = fmt.Sprintf("%v", v)
+		}
+		stringItems = append(stringItems, m)
+	}
 
 	var headers []string
 	m := make(map[string]struct{})
@@ -79,7 +90,7 @@ func New(app *tview.Application, km keymapper) *Dataviewer {
 		headers:   headers,
 		// headers:      []string{"password", "eyeColor", "ein", "gender", "id", "macAddress", "hair", "role", "email", "height", "company", "age", "ssn", "bloodGroup", "ip", "university", "maidenName", "image", "lastName", "username", "phone", "userAgent", "birthDate", "firstName", "address", "crypto", "bank", "weight"},
 		// rows:         items[:30],
-		rows:         items,
+		rows:         stringItems,
 		bgColor:      tview.Styles.PrimitiveBackgroundColor,
 		borderColor:  tcell.ColorGray,
 		textColor:    tcell.ColorWhite,
@@ -87,6 +98,14 @@ func New(app *tview.Application, km keymapper) *Dataviewer {
 		visibleRight: -1,
 	}
 	fmt.Printf("headers: []string{\"%s\"}\n", strings.Join(headers, "\", \""))
+
+	s := fetcher.NewSqliteFetcher()
+	cols, rows, err := s.Select(context.Background(), "select * from album;")
+	if err != nil {
+		log.Fatal(err)
+	}
+	d.headers = cols
+	d.rows = rows
 
 	d.operatorRunner = map[Action]func(target [2]int){
 		ActionNone: d.MoveCursorTo,
@@ -178,7 +197,7 @@ func (d *Dataviewer) Draw(screen tcell.Screen) {
 	}
 bottomOffset:
 	for d.offsets[0] < d.cursor[0] {
-		for i, r := range d.rows[d.offsets[0] : d.cursor[0]+1] {
+		for i, r := range d.rows[d.offsets[0]:d.cursor[0]] {
 			i += d.offsets[0]
 			// measure max text height on the row
 			textHeight := 1
