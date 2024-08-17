@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	_ "embed"
-	"fmt"
 	"sort"
 	"sync"
 	"time"
@@ -12,8 +11,8 @@ import (
 	"github.com/ngavinsir/sqluy/dataviewer"
 	"github.com/ngavinsir/sqluy/editor"
 	"github.com/ngavinsir/sqluy/fetcher"
-	"github.com/ngavinsir/sqluy/flex"
 	"github.com/ngavinsir/sqluy/keymap"
+	"github.com/ngavinsir/sqluy/modal"
 	"github.com/rivo/tview"
 )
 
@@ -22,6 +21,32 @@ type (
 		Refocus tview.Primitive
 		Text    string
 	}
+
+	TabState struct {
+		headers         []string
+		rows            [][]string
+		executionStart  time.Time
+		executionFinish time.Time
+		status          TabStatus
+		query           string
+	}
+
+	State struct {
+		tabStates   []TabState
+		currentTab  uint8
+		statusText  *tview.TextView
+		modal       *modal.Modal
+		currentView int
+		views       []*tview.Box
+		app         *tview.Application
+	}
+)
+
+type TabStatus uint8
+
+const (
+	TabStatusEditing = iota
+	TabStatusExecuting
 )
 
 //go:embed keymap.json
@@ -30,39 +55,61 @@ var keymapString string
 func main() {
 	var wg sync.WaitGroup
 	app := tview.NewApplication()
+	state := State{
+		tabStates:  []TabState{{}},
+		statusText: tview.NewTextView(),
+		app:        app,
+	}
 	ctx, cancel := context.WithCancel(context.Background())
 	km := keymap.New(keymapString)
-
-	app.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
-		if event.Key() == tcell.KeyLF {
-			return tcell.NewEventKey(tcell.KeyEnter, 0, tcell.ModCtrl)
-		}
-		return event
-	})
 
 	modalChan := make(chan ShowModalArg)
 	delayDrawChan := make(chan time.Time)
 
 	page := tview.NewPages()
+	dataviewerPage := tview.NewPages()
 
 	d := dataviewer.New(app, km)
 
+	dataviewerModal := modal.NewModal().AddButtons([]string{"Cancel"}).SetBackgroundColor(tcell.ColorBlack)
+	dataviewerModal.SetBorderColor(tcell.ColorBlack)
+	dataviewerModal.Box.SetBackgroundColor(tcell.ColorBlack)
+	state.modal = dataviewerModal
+
+	dataviewerPage.AddPage("main", d, true, true)
+	dataviewerPage.AddPage("modal", dataviewerModal, true, false)
+
 	sqliteFetcher := fetcher.NewSqliteFetcher()
 
-	flex := flex.New().SetDirection(tview.FlexRow)
+	flex := tview.NewFlex().SetDirection(tview.FlexRow)
 	e := editor.New(
 		editor.WithKeymapper(km),
 		editor.WithApp(app),
-		editor.WithDoneFunc(func(s string) {
+		editor.WithDoneFunc(func(e *editor.Editor, s string) {
+			if state.tabStates[state.currentTab].status != TabStatusEditing {
+				return
+			}
+			state.tabStates[state.currentTab].executionStart = time.Now()
+			state.tabStates[state.currentTab].status = TabStatusExecuting
+			e.SetDisabled(true)
+			dataviewerPage.ShowPage("modal")
+
 			go func() {
 				cols, rows, err := sqliteFetcher.Select(ctx, s)
-				if err != nil {
-					modalChan <- ShowModalArg{Text: err.Error(), Refocus: flex}
-					return
-				}
+				executionFinish := time.Now()
 
 				app.QueueUpdateDraw(func() {
-					d.SetData(cols, rows)
+					if err != nil {
+						modalChan <- ShowModalArg{Text: err.Error(), Refocus: flex}
+					} else {
+						d.SetData(cols, rows)
+					}
+
+					state.tabStates[state.currentTab].status = TabStatusEditing
+					state.tabStates[state.currentTab].executionFinish = executionFinish
+					state.FocusViewIndex(1)
+					e.SetDisabled(false)
+					dataviewerPage.HidePage("modal")
 				})
 			}()
 		}),
@@ -75,26 +122,37 @@ func main() {
 	})
 
 	flex.
-		AddItem(e, 0, 1, false).
-		AddItem(d, 0, 1, true)
+		AddItem(e, 0, 1, true).
+		AddItem(dataviewerPage, 0, 1, false)
 
 	modal := tview.NewModal().AddButtons([]string{"Ok"})
-	modalFlex := tview.NewFlex().
-		AddItem(nil, 0, 1, false).
-		AddItem(tview.NewFlex().SetDirection(tview.FlexRow).
-			AddItem(nil, 0, 1, false).
-			AddItem(modal, 0, 1, false).
-			AddItem(nil, 0, 1, false),
-			0, 1, false).
-		AddItem(nil, 0, 1, false)
 
 	page.AddPage("main", flex, true, true)
-	page.AddPage("modal", modalFlex, true, false)
-	page.SetRect(0, 0, 31, 27)
+	page.AddPage("modal", modal, true, false)
+
+	state.views = []*tview.Box{e.Box, d.Box}
+
+	app.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
+		if event.Key() == tcell.KeyCtrlH {
+			state.FocusViewIndex(state.currentView + 1)
+			return nil
+		}
+
+		if event.Key() == tcell.KeyCtrlL {
+			state.FocusViewIndex(state.currentView - 1)
+			return nil
+		}
+
+		if event.Key() == tcell.KeyLF {
+			return tcell.NewEventKey(tcell.KeyEnter, 0, tcell.ModCtrl)
+		}
+		return event
+	})
 
 	wg.Add(2)
 	go modalLoop(ctx, modalChan, page, modal, app, &wg)
 	go delayDrawLoop(ctx, &wg, delayDrawChan, app)
+	go state.Draw(ctx, app)
 	err := app.SetRoot(page, true).Run()
 	cancel()
 	wg.Wait()
@@ -156,6 +214,58 @@ func modalLoop(ctx context.Context, c chan ShowModalArg, p *tview.Pages, m *tvie
 				return
 			case <-modalClosed:
 			}
+		}
+	}
+}
+
+func (s State) Draw(ctx context.Context, app *tview.Application) {
+	t := time.NewTicker(10 * time.Millisecond)
+	defer t.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			tabState := s.tabStates[s.currentTab]
+
+			if tabState.executionStart.IsZero() {
+				continue
+			}
+
+			now := time.Now()
+			if tabState.executionFinish.After(tabState.executionStart) {
+				now = tabState.executionFinish
+			}
+			d := now.Sub(tabState.executionStart)
+			durationText := d.Round(time.Millisecond).String()
+			text := durationText
+			if tabState.status == TabStatusExecuting {
+				text = "executing... " + text
+			}
+
+			app.QueueUpdateDraw(func() {
+				s.modal.SetText(text)
+			})
+		}
+	}
+}
+
+func (s *State) FocusViewIndex(index int) {
+	if index < 0 {
+		index = len(s.views) - 1
+	}
+	if index >= len(s.views) {
+		index = 0
+	}
+
+	for i, box := range s.views {
+		if i == index {
+			s.app.SetFocus(box)
+			s.currentView = i
+			box.SetBorderColor(tcell.ColorWhite)
+		} else {
+			box.SetBorderColor(tcell.ColorGray)
 		}
 	}
 }

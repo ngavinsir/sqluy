@@ -52,7 +52,7 @@ type (
 	Editor struct {
 		keymapper         keymapper
 		viewModalFunc     func(string)
-		onDoneFunc        func(string)
+		onDoneFunc        func(*Editor, string)
 		onTextChangedFunc func(string)
 		delayDrawFunc     func(time.Time)
 		app               *tview.Application
@@ -75,6 +75,7 @@ type (
 		undoStack           []undoStackItem
 		decorators          []decorator
 		cursor              [2]int
+		disabled            bool
 		visualStart         [2]int
 		offsets             [2]int
 		pendingCount        int
@@ -962,6 +963,7 @@ func (e *Editor) Draw(screen tcell.Screen) {
 
 	// draw cursor
 	if e.HasFocus() && e.searchEditor == nil {
+		newCursor := [2]int{cursorX + x + lineNumberWidth - e.offsets[1], e.cursor[0] + y - e.offsets[0]}
 		cursorStyle := tcell.CursorStyleSteadyBlock
 		if e.mode == ModeInsert {
 			cursorStyle = tcell.CursorStyleSteadyBar
@@ -969,7 +971,10 @@ func (e *Editor) Draw(screen tcell.Screen) {
 			cursorStyle = tcell.CursorStyleSteadyUnderline
 		}
 		screen.SetCursorStyle(cursorStyle)
-		screen.ShowCursor(cursorX+x+lineNumberWidth-e.offsets[1], e.cursor[0]+y-e.offsets[0])
+		screen.ShowCursor(newCursor[0], newCursor[1])
+		if e.disabled {
+			screen.ShowCursor(-1, -1)
+		}
 	}
 }
 
@@ -981,8 +986,16 @@ func (e *Editor) Focus(delegate func(p tview.Primitive)) {
 	e.Box.Focus(delegate)
 }
 
+func (e *Editor) SetDisabled(b bool) {
+	e.disabled = b
+}
+
 func (e *Editor) InputHandler() func(event *tcell.EventKey, setFocus func(p tview.Primitive)) {
 	return e.Box.WrapInputHandler(func(event *tcell.EventKey, setFocus func(p tview.Primitive)) {
+		if e.disabled {
+			return
+		}
+
 		// embedded search editor is not null, send input event to it
 		if e.searchEditor != nil {
 			e.searchEditor.InputHandler()(event, setFocus)
@@ -1027,7 +1040,7 @@ func (e *Editor) InputHandler() func(event *tcell.EventKey, setFocus func(p tvie
 				return
 			case tcell.KeyEnter:
 				if e.oneLineMode && e.onDoneFunc != nil {
-					e.onDoneFunc(e.text)
+					e.onDoneFunc(e, e.text)
 					return
 				}
 				e.ReplaceText("\n", e.cursor, e.cursor)
@@ -1612,7 +1625,7 @@ func (e *Editor) Done() {
 		return
 	}
 
-	e.onDoneFunc(e.text)
+	e.onDoneFunc(e, e.text)
 }
 
 func (e *Editor) Exit() {
@@ -1646,7 +1659,7 @@ func (e *Editor) EnableSearch() [2]int {
 	se.SetRect(x, y+h-1, w, 1)
 	se.SetDelayDrawFunc(e.delayDrawFunc)
 	se.mode = ModeInsert
-	se.onDoneFunc = func(s string) {
+	se.onDoneFunc = func(_ *Editor, s string) {
 		e.buildSearchIndexes('n', regexp.QuoteMeta(s), 0, 0, 0)
 		e.operatorRunner[e.pendingAction](e.GetSearchCursor())
 		e.searchEditor = nil
@@ -1668,7 +1681,7 @@ func (e *Editor) Flash() [2]int {
 	se.SetRect(x, y+h-1, w, 1)
 	se.SetDelayDrawFunc(e.delayDrawFunc)
 	se.mode = ModeInsert
-	se.onDoneFunc = func(s string) {
+	se.onDoneFunc = func(_ *Editor, s string) {
 		e.searchEditor = nil
 		e.ResetAction()
 		e.flashIndexes = make(map[rune][2]int)

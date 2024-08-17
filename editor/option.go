@@ -14,7 +14,7 @@ func WithKeymapper(km keymapper) func(e *Editor) {
 	}
 }
 
-func WithDoneFunc(doneFn func(string)) func(e *Editor) {
+func WithDoneFunc(doneFn func(*Editor, string)) func(e *Editor) {
 	return func(e *Editor) {
 		e.onDoneFunc = doneFn
 	}
