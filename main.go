@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	_ "embed"
+	"fmt"
 	"sort"
 	"sync"
 	"time"
@@ -53,13 +54,17 @@ func main() {
 		editor.WithKeymapper(km),
 		editor.WithApp(app),
 		editor.WithDoneFunc(func(s string) {
-			cols, rows, err := sqliteFetcher.Select(ctx, s)
-			if err != nil {
-				modalChan <- ShowModalArg{Text: err.Error(), Refocus: flex}
-				return
-			}
+			go func() {
+				cols, rows, err := sqliteFetcher.Select(ctx, s)
+				if err != nil {
+					modalChan <- ShowModalArg{Text: err.Error(), Refocus: flex}
+					return
+				}
 
-			d.SetData(cols, rows)
+				app.QueueUpdateDraw(func() {
+					d.SetData(cols, rows)
+				})
+			}()
 		}),
 	)
 	e.SetViewModalFunc(func(text string) {

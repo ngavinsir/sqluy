@@ -445,6 +445,7 @@ func (e *Editor) buildTreesitter(text string) {
 	if err != nil {
 		panic(err)
 	}
+	log.Println(tree.RootNode())
 
 	q, _ := sitter.NewQuery(sqlHighlightsQuery, sqlLang)
 	qc := sitter.NewQueryCursor()
@@ -2008,14 +2009,17 @@ func (e *Editor) DeleteUntilEndOfLine() {
 }
 
 func (e *Editor) DeleteLine() {
-	if len(e.spansPerLines) <= 1 {
+	if len(e.spansPerLines) < 1 {
 		return
 	}
+
 	from := [2]int{e.cursor[0], 0}
 	until := [2]int{e.cursor[0] + 1, 0}
 	if e.cursor[0] == len(e.spansPerLines)-1 {
-		aboveRow := e.cursor[0] - 1
-		from = [2]int{aboveRow, len(e.spansPerLines[aboveRow]) - 1}
+		if e.cursor[0] != 0 {
+			aboveRow := e.cursor[0] - 1
+			from = [2]int{aboveRow, len(e.spansPerLines[aboveRow]) - 1}
+		}
 		until = [2]int{e.cursor[0], len(e.spansPerLines[e.cursor[0]]) - 1}
 	}
 	e.ReplaceText("", from, until)

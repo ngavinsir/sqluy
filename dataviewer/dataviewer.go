@@ -102,6 +102,9 @@ func (d *Dataviewer) SetData(headers []string, rows []map[string]string) {
 	d.rows = rows
 	d.cursor = [2]int{0, 0}
 	d.offsets = [2]int{0, 0}
+	d.visibleLeft = -1
+	d.visibleRight = -1
+	clear(d.colWidths)
 }
 
 func (d *Dataviewer) Draw(screen tcell.Screen) {
@@ -598,28 +601,7 @@ func (d *Dataviewer) InputHandler() func(event *tcell.EventKey, setFocus func(p 
 			}
 		}
 
-		// switch event.Key() {
-		// case tcell.KeyUp:
-		// 	d.cursor[0]--
-		// 	if d.cursor[0] < 0 {
-		// 		d.cursor[0] = 0
-		// 	}
-		// case tcell.KeyDown:
-		// 	d.cursor[0]++
-		// 	if d.cursor[0] > len(d.rows) {
-		// 		d.cursor[0] = len(d.rows)
-		// 	}
-		// case tcell.KeyLeft:
-		// 	d.cursor[1]--
-		// 	if d.cursor[1] < 0 {
-		// 		d.cursor[1] = 0
-		// 	}
-		// case tcell.KeyRight:
-		// 	d.cursor[1]++
-		// 	if d.cursor[1] > len(d.headers)-1 {
-		// 		d.cursor[1] = len(d.headers) - 1
-		// 	}
-		// }
+		d.ResetAction()
 	})
 }
 

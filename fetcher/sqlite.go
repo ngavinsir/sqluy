@@ -17,22 +17,8 @@ type (
 )
 
 func NewSqliteFetcher() SqliteFetcher {
-	db, err := sql.Open("sqlite3", "./recordings.db")
+	db, err := sql.Open("sqlite3", "./chinook.db")
 	if err != nil {
-		log.Fatal(err)
-	}
-
-	_, err = db.Exec(`
-		-- DROP TABLE IF EXISTS album;
-		CREATE TABLE if not exists album (
-			id         INTEGER PRIMARY KEY AUTOINCREMENT,
-			title      VARCHAR(128) NOT NULL,
-			artist     VARCHAR(255) NOT NULL,
-			price      DECIMAL(5,2) NOT NULL
-		);
-	`)
-	if err != nil {
-		log.Println("aa")
 		log.Fatal(err)
 	}
 
