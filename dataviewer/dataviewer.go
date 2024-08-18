@@ -21,7 +21,6 @@ type (
 	Dataviewer struct {
 		keymapper  keymapper
 		runeRunner map[Action]func(r rune)
-		app        *tview.Application
 		*tview.Box
 		operatorRunner   map[Action]func(target [2]int)
 		motionRunner     map[Action]func() [2]int
@@ -50,10 +49,9 @@ type (
 	}
 )
 
-func New(app *tview.Application, km keymapper) *Dataviewer {
+func New(km keymapper) *Dataviewer {
 	d := &Dataviewer{
 		keymapper:    km,
-		app:          app,
 		Box:          tview.NewBox().SetBorder(true).SetTitle("Dataviewer").SetTitleAlign(tview.AlignLeft),
 		bgColor:      tview.Styles.PrimitiveBackgroundColor,
 		borderColor:  tcell.ColorGray,
@@ -659,7 +657,7 @@ func (d *Dataviewer) MoveCursorTo(to [2]int) {
 
 func (d *Dataviewer) EnableSearch() [2]int {
 	x, y, w, h := d.Box.GetInnerRect()
-	se := editor.New(editor.WithKeymapper(d.keymapper), editor.WithApp(d.app)).SetOneLineMode(true)
+	se := editor.New(editor.WithKeymapper(d.keymapper)).SetOneLineMode(true)
 	se.SetText("", [2]int{0, 0})
 	se.SetRect(x, y+h-1, w, 1)
 	se.ChangeMode(editor.ModeInsert)

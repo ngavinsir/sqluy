@@ -50,12 +50,12 @@ type (
 	decorator func(x, y, width, height int)
 
 	Editor struct {
+		mutex             sync.Mutex
 		keymapper         keymapper
 		viewModalFunc     func(string)
 		onDoneFunc        func(*Editor, string)
 		onTextChangedFunc func(string)
-		delayDrawFunc     func(time.Time)
-		app               *tview.Application
+		delayDrawFunc     func(time.Time, func())
 		onExitFunc        func()
 		*tview.Box
 		searchEditor        *Editor
@@ -372,7 +372,7 @@ func (e *Editor) SetViewModalFunc(f func(string)) *Editor {
 	return e
 }
 
-func (e *Editor) SetDelayDrawFunc(f func(time.Time)) *Editor {
+func (e *Editor) SetDelayDrawFunc(f func(time.Time, func())) *Editor {
 	e.delayDrawFunc = f
 	return e
 }
@@ -583,9 +583,10 @@ func (e *Editor) buildMotionwIndexes(editCount uint64, text string, spansPerLine
 	if e.editCount.Load() > editCount {
 		return
 	}
-	e.app.QueueUpdate(func() {
-		e.motionIndexes['w'] = indexes
-	})
+
+	e.mutex.Lock()
+	defer e.mutex.Unlock()
+	e.motionIndexes['w'] = indexes
 }
 
 func (e *Editor) buildMotionEIndexes(editCount uint64, text string, spansPerLines [][]span) {
@@ -624,9 +625,10 @@ func (e *Editor) buildMotionEIndexes(editCount uint64, text string, spansPerLine
 	if e.editCount.Load() > editCount {
 		return
 	}
-	e.app.QueueUpdate(func() {
-		e.motionIndexes['E'] = indexes
-	})
+
+	e.mutex.Lock()
+	defer e.mutex.Unlock()
+	e.motionIndexes['E'] = indexes
 }
 
 func (e *Editor) buildMotionWIndexes(editCount uint64, text string, spansPerLines [][]span) {
@@ -665,9 +667,10 @@ func (e *Editor) buildMotionWIndexes(editCount uint64, text string, spansPerLine
 	if e.editCount.Load() > editCount {
 		return
 	}
-	e.app.QueueUpdate(func() {
-		e.motionIndexes['W'] = indexes
-	})
+
+	e.mutex.Lock()
+	defer e.mutex.Unlock()
+	e.motionIndexes['W'] = indexes
 }
 func (e *Editor) buildMotioneIndexes(editCount uint64, text string, spansPerLines [][]span) {
 	var indexes [][3]int
@@ -717,9 +720,10 @@ func (e *Editor) buildMotioneIndexes(editCount uint64, text string, spansPerLine
 	if e.editCount.Load() > editCount {
 		return
 	}
-	e.app.QueueUpdate(func() {
-		e.motionIndexes['e'] = indexes
-	})
+
+	e.mutex.Lock()
+	defer e.mutex.Unlock()
+	e.motionIndexes['e'] = indexes
 }
 
 func (e *Editor) Draw(screen tcell.Screen) {
@@ -1000,11 +1004,6 @@ func (e *Editor) InputHandler() func(event *tcell.EventKey, setFocus func(p tvie
 		if e.searchEditor != nil {
 			e.searchEditor.InputHandler()(event, setFocus)
 			return
-		}
-
-		// if yankOnVisual is true and mode is still visual, yank the texts in visual, then can continue to process the event
-		if e.yankOnVisual {
-			e.YankUntil(e.cursor)
 		}
 
 		// handle unkeymappable actions first, e.g. rune events on insert mode
@@ -1654,7 +1653,7 @@ func (e *Editor) Redo() {
 
 func (e *Editor) EnableSearch() [2]int {
 	x, y, w, h := e.Box.GetInnerRect()
-	se := New(WithKeymapper(e.keymapper), WithApp(e.app)).SetOneLineMode(true)
+	se := New(WithKeymapper(e.keymapper)).SetOneLineMode(true)
 	se.SetText("", [2]int{0, 0})
 	se.SetRect(x, y+h-1, w, 1)
 	se.SetDelayDrawFunc(e.delayDrawFunc)
@@ -1676,7 +1675,7 @@ func (e *Editor) EnableSearch() [2]int {
 
 func (e *Editor) Flash() [2]int {
 	x, y, w, h := e.Box.GetInnerRect()
-	se := New(WithKeymapper(e.keymapper), WithApp(e.app)).SetOneLineMode(true)
+	se := New(WithKeymapper(e.keymapper)).SetOneLineMode(true)
 	se.SetText("", [2]int{0, 0})
 	se.SetRect(x, y+h-1, w, 1)
 	se.SetDelayDrawFunc(e.delayDrawFunc)
@@ -1967,27 +1966,26 @@ func (e *Editor) DeleteUntil(until [2]int) {
 }
 
 func (e *Editor) YankUntil(until [2]int) {
-	if e.yankOnVisual || e.mode == ModeVisual || e.mode == ModeVLine {
-		e.yankOnVisual = false
-		if e.mode != ModeVisual && e.mode != ModeVLine {
-			return
-		}
-
-		e.mode = ModeNormal
-		until := e.cursor
-		from := e.visualStart
-		if until[0] < from[0] || (until[0] == from[0] && until[1] < from[1]) {
-			from, until = until, from
-		}
-		clipboard.Write(e.GetText(from, until))
-		e.ResetMotionIndexes()
-		return
-	}
-
 	e.VisualUntil(until)
 	e.yankOnVisual = true
 	if e.delayDrawFunc != nil {
-		e.delayDrawFunc(time.Now().Add(100 * time.Millisecond))
+		e.delayDrawFunc(time.Now().Add(100*time.Millisecond), func() {
+			if e.yankOnVisual || e.mode == ModeVisual || e.mode == ModeVLine {
+				e.yankOnVisual = false
+				if e.mode != ModeVisual && e.mode != ModeVLine {
+					return
+				}
+
+				e.mode = ModeNormal
+				until := e.cursor
+				from := e.visualStart
+				if until[0] < from[0] || (until[0] == from[0] && until[1] < from[1]) {
+					from, until = until, from
+				}
+				clipboard.Write(e.GetText(from, until))
+				e.ResetMotionIndexes()
+			}
+		})
 	}
 }
 
