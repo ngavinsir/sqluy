@@ -510,13 +510,25 @@ func (e *Editor) buildTreesitter(text string) {
 		}
 	}
 
-	// i := sitter.NewIterator(tree.RootNode(), sitter.DFSMode)
-	// i.ForEach(func(n *sitter.Node) error {
-	// 	if n.IsError() {
-	// 		e.highlightIndexes[[2]int{int(n.StartByte()), int(n.EndByte())}] = "error"
-	// 	}
-	// 	return nil
-	// })
+	i := e.ts.NewIterator(rootNode, treesittergo.DFSMode)
+	i.ForEach(context.Background(), func(n treesittergo.Node) error {
+		nodeIsError, err := n.IsError(context.Background())
+		if err != nil {
+			panic(err)
+		}
+		if nodeIsError {
+			nodeStartByte, err := n.StartByte(context.Background())
+			if err != nil {
+				panic(err)
+			}
+			nodeEndByte, err := n.EndByte(context.Background())
+			if err != nil {
+				panic(err)
+			}
+			e.highlightIndexes[[2]int{int(nodeStartByte), int(nodeEndByte)}] = "error"
+		}
+		return nil
+	})
 }
 
 func (e *Editor) buildSearchIndexes(group rune, query string, offset, y, maxY int) bool {

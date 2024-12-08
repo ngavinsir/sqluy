@@ -12,6 +12,14 @@ github.com/ncruces/julianday v1.0.0 h1:fH0OKwa7NWvniGQtxdJRxAgkBMolni2BjDHaWTxqt
 github.com/ncruces/julianday v1.0.0/go.mod h1:Dusn2KvZrrovOMJuOt0TNXL6tB7U2E8kvza5fFc9G7g=
 github.com/ngavinsir/treesittergo v0.0.0-20241208061237-d67c677d243e h1:bcYBJKjOS6LaO1SNQmBdfPl84h2AdtLc9nTHaQ8PsIM=
 github.com/ngavinsir/treesittergo v0.0.0-20241208061237-d67c677d243e/go.mod h1:wTmG481N3drxsc0hkXFAfP2JqUEdrn9MWTH7j8Mhv2k=
+github.com/ngavinsir/treesittergo v0.0.0-20241208073737-cc0ff616dbdc h1:v8NkieOD4/TDfssk4+asqJPQ9Az//UNf3Favvy3K7AQ=
+github.com/ngavinsir/treesittergo v0.0.0-20241208073737-cc0ff616dbdc/go.mod h1:wTmG481N3drxsc0hkXFAfP2JqUEdrn9MWTH7j8Mhv2k=
+github.com/ngavinsir/treesittergo v0.0.0-20241208074247-9a41f4eafd5d h1:GnaG2CDrDAjDAjZwwr6BS0qcPFQx5o2sE2+Zzsz9GWw=
+github.com/ngavinsir/treesittergo v0.0.0-20241208074247-9a41f4eafd5d/go.mod h1:wTmG481N3drxsc0hkXFAfP2JqUEdrn9MWTH7j8Mhv2k=
+github.com/ngavinsir/treesittergo v0.0.0-20241208074653-619955499d50 h1:z6FGAho8QelKGIEkIFnOcvom0JtZaZIUZXLTj9wowAU=
+github.com/ngavinsir/treesittergo v0.0.0-20241208074653-619955499d50/go.mod h1:wTmG481N3drxsc0hkXFAfP2JqUEdrn9MWTH7j8Mhv2k=
+github.com/ngavinsir/treesittergo v0.0.0-20241208075130-20468ca169ca h1:+1JU6tsBVWhcTN/eqmvdQzeoni3EiukFJqTml13fxts=
+github.com/ngavinsir/treesittergo v0.0.0-20241208075130-20468ca169ca/go.mod h1:wTmG481N3drxsc0hkXFAfP2JqUEdrn9MWTH7j8Mhv2k=
 github.com/rivo/tview v0.0.0-20240616192244-23476fa0bab2 h1:LXMiBMxtuXw8e2paN61dI2LMp8JZYyH4UXDwssRI3ys=
 github.com/rivo/tview v0.0.0-20240616192244-23476fa0bab2/go.mod h1:02iFIz7K/A9jGCvrizLPvoqr4cEIx7q54RH5Qudkrss=
 github.com/rivo/uniseg v0.2.0/go.mod h1:J6wj4VEh+S6ZtnVlnTBMWIodfgj8LQOQFoIToxlJtxc=
