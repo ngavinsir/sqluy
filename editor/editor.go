@@ -20,10 +20,9 @@ import (
 	"github.com/gdamore/tcell/v2"
 	"github.com/ngavinsir/sqluy/clipboard"
 	"github.com/ngavinsir/sqluy/vim"
+	"github.com/ngavinsir/treesittergo"
 	"github.com/rivo/tview"
 	"github.com/rivo/uniseg"
-	sitter "github.com/smacker/go-tree-sitter"
-	"github.com/smacker/go-tree-sitter/sql"
 )
 
 type (
@@ -88,12 +87,16 @@ type (
 		oneLineMode         bool
 		waitingForMotion    bool
 		yankOnVisual        bool // for yank indicator utilizng ModeVisual mode
+
+		parser  treesittergo.Parser
+		ts      treesittergo.Treesitter
+		sqlLang treesittergo.Language
 	}
 )
 
 var (
 	//go:embed sql.highlights.scm
-	sqlHighlightsQuery []byte
+	sqlHighlightsQuery string
 
 	flashAlphabet = "abcdefghijkmnpqrtwxyzABCDEFGHJKLMNPQRTUVWXY"
 
@@ -145,11 +148,28 @@ var (
 )
 
 func New(options ...func(*Editor)) *Editor {
+	ts, err := treesittergo.New(context.Background())
+	if err != nil {
+		panic(err)
+	}
+	parser, err := ts.NewParser(context.Background())
+	if err != nil {
+		panic(err)
+	}
+	sqlLang, err := ts.LanguageSQL(context.Background())
+	if err != nil {
+		panic(err)
+	}
+	parser.SetLanguage(context.Background(), sqlLang)
+
 	e := &Editor{
 		tabSize:          4,
 		Box:              tview.NewBox().SetBorder(true).SetTitle("Editor").SetTitleAlign(tview.AlignLeft),
 		decorations:      make(map[[2]int]decoration),
 		highlightIndexes: make(map[[2]int]string),
+		ts:               ts,
+		parser:           parser,
+		sqlLang:          sqlLang,
 	}
 	for _, option := range options {
 		option(e)
@@ -438,23 +458,31 @@ func (e *Editor) SetText(text string, cursor [2]int) *Editor {
 }
 
 func (e *Editor) buildTreesitter(text string) {
-	parser := sitter.NewParser()
-	sqlLang := sql.GetLanguage()
-	parser.SetLanguage(sqlLang)
-	sourceCode := []byte(text)
-	tree, err := parser.ParseCtx(context.Background(), nil, sourceCode)
+	tree, err := e.parser.ParseString(context.Background(), text)
 	if err != nil {
 		panic(err)
 	}
-	log.Println(tree.RootNode())
 
-	q, _ := sitter.NewQuery(sqlHighlightsQuery, sqlLang)
-	qc := sitter.NewQueryCursor()
-	qc.Exec(q, tree.RootNode())
-	lastEnd := uint32(0)
+	q, err := e.ts.NewQuery(context.Background(), sqlHighlightsQuery, e.sqlLang)
+	if err != nil {
+		panic(err)
+	}
+	qc, err := e.ts.NewQueryCursor(context.Background())
+	if err != nil {
+		panic(err)
+	}
+	rootNode, err := tree.RootNode(context.Background())
+	if err != nil {
+		panic(err)
+	}
+	qc.Exec(context.Background(), q, rootNode)
+	lastEnd := uint64(0)
 	// Iterate over query results
 	for {
-		m, ok := qc.NextMatch()
+		m, ok, err := qc.NextMatch(context.Background())
+		if err != nil {
+			panic(err)
+		}
 		if !ok {
 			break
 		}
@@ -462,21 +490,33 @@ func (e *Editor) buildTreesitter(text string) {
 			continue
 		}
 		for _, c := range m.Captures {
-			if c.Node.StartByte() < lastEnd {
+			nodeStartByte, err := c.Node.StartByte(context.Background())
+			if err != nil {
+				panic(err)
+			}
+			if nodeStartByte < lastEnd {
 				continue
 			}
-			lastEnd = c.Node.EndByte()
-			e.highlightIndexes[[2]int{int(c.Node.StartByte()), int(c.Node.EndByte())}] = q.CaptureNameForId(c.Index)
+			captureName, err := q.CaptureNameForID(context.Background(), c.ID)
+			if err != nil {
+				panic(err)
+			}
+			nodeEndByte, err := c.Node.EndByte(context.Background())
+			if err != nil {
+				panic(err)
+			}
+			lastEnd = nodeEndByte
+			e.highlightIndexes[[2]int{int(nodeStartByte), int(nodeEndByte)}] = captureName
 		}
 	}
 
-	i := sitter.NewIterator(tree.RootNode(), sitter.DFSMode)
-	i.ForEach(func(n *sitter.Node) error {
-		if n.IsError() {
-			e.highlightIndexes[[2]int{int(n.StartByte()), int(n.EndByte())}] = "error"
-		}
-		return nil
-	})
+	// i := sitter.NewIterator(tree.RootNode(), sitter.DFSMode)
+	// i.ForEach(func(n *sitter.Node) error {
+	// 	if n.IsError() {
+	// 		e.highlightIndexes[[2]int{int(n.StartByte()), int(n.EndByte())}] = "error"
+	// 	}
+	// 	return nil
+	// })
 }
 
 func (e *Editor) buildSearchIndexes(group rune, query string, offset, y, maxY int) bool {
@@ -672,6 +712,7 @@ func (e *Editor) buildMotionWIndexes(editCount uint64, text string, spansPerLine
 	defer e.mutex.Unlock()
 	e.motionIndexes['W'] = indexes
 }
+
 func (e *Editor) buildMotioneIndexes(editCount uint64, text string, spansPerLines [][]span) {
 	var indexes [][3]int
 	for i, line := range strings.Split(text, "\n") {
