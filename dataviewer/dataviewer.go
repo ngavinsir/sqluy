@@ -410,6 +410,28 @@ func (d *Dataviewer) getHeaderHeight() int {
 	return textHeight
 }
 
+func (d *Dataviewer) getVisibleRowCount() int {
+    _, _, _, h := d.Box.GetInnerRect()
+    headerHeight := d.getHeaderHeight()
+    availableHeight := h - headerHeight - 1
+    
+    visibleRows := 0
+    currentHeight := 0
+    
+    for i := d.offsets[0]; i < len(d.rows); i++ {
+        rowHeight := d.rowHeights[i] + 1 // +1 for border
+        
+        if currentHeight + rowHeight > availableHeight {
+            break
+        }
+        
+        visibleRows++
+        currentHeight += rowHeight
+    }
+    
+    return visibleRows
+}
+
 func (d *Dataviewer) drawCell(screen tcell.Screen, i, j, x, y, colWidth, height, topPadding int, content string) {
 	textColor := d.textColor
 	borderColor := d.borderColor
