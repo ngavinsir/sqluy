@@ -65,8 +65,8 @@ func New(km keymapper) *Dataviewer {
 	}
 
 	d.motionRunner = map[Action]func() [2]int{
-		ActionMoveEndOfLine:   d.GetEndOfLineCursor,
-		ActionMoveStartOfLine: d.GetStartOfLineCursor,
+		ActionMoveEndOfLine:    d.GetEndOfLineCursor,
+		ActionMoveStartOfLine:  d.GetStartOfLineCursor,
 		ActionMoveHalfPageUp:   d.MoveCursorHalfPageUp,
 		ActionMoveHalfPageDown: d.MoveCursorHalfPageDown,
 		// ActionMoveFirstNonWhitespace: d.GetFirstNonWhitespaceCursor,
@@ -98,31 +98,31 @@ func New(km keymapper) *Dataviewer {
 }
 
 func (d *Dataviewer) SetData(headers []string, rows []map[string]string) {
-    d.headers = headers
-    d.rows = rows
-    d.cursor = [2]int{0, 0}
-    d.offsets = [2]int{0, 0}
-    d.visibleLeft = -1
-    d.visibleRight = -1
-    d.rowHeights = nil // Clear cached heights
-    clear(d.colWidths)
-    
-    // Pre-calculate row heights
-    if len(rows) > 0 {
-        d.rowHeights = make([]int, len(rows))
-        for i, r := range rows {
-            maxHeight := 1
-            for _, header := range headers {
-                if v, ok := r[header]; ok {
-                    h := d.getTextHeight(fmt.Sprint(v), 80) // Use average width
-                    if h > maxHeight {
-                        maxHeight = h
-                    }
-                }
-            }
-            d.rowHeights[i] = maxHeight
-        }
-    }
+	d.headers = headers
+	d.rows = rows
+	d.cursor = [2]int{0, 0}
+	d.offsets = [2]int{0, 0}
+	d.visibleLeft = -1
+	d.visibleRight = -1
+	d.rowHeights = nil // Clear cached heights
+	clear(d.colWidths)
+
+	// Pre-calculate row heights
+	if len(rows) > 0 {
+		d.rowHeights = make([]int, len(rows))
+		for i, r := range rows {
+			maxHeight := 1
+			for _, header := range headers {
+				if v, ok := r[header]; ok {
+					h := d.getTextHeight(fmt.Sprint(v), 80) // Use average width
+					if h > maxHeight {
+						maxHeight = h
+					}
+				}
+			}
+			d.rowHeights[i] = maxHeight
+		}
+	}
 }
 
 func (d *Dataviewer) Draw(screen tcell.Screen) {
@@ -411,25 +411,27 @@ func (d *Dataviewer) getHeaderHeight() int {
 }
 
 func (d *Dataviewer) getVisibleRowCount() int {
-    _, _, _, h := d.Box.GetInnerRect()
-    headerHeight := d.getHeaderHeight()
-    availableHeight := h - headerHeight - 1
-    
-    visibleRows := 0
-    currentHeight := 0
-    
-    for i := d.offsets[0]; i < len(d.rows); i++ {
-        rowHeight := d.rowHeights[i] + 1 // +1 for border
-        
-        if currentHeight + rowHeight > availableHeight {
-            break
-        }
-        
-        visibleRows++
-        currentHeight += rowHeight
-    }
-    
-    return visibleRows
+	_, _, _, h := d.Box.GetInnerRect()
+	headerHeight := d.getHeaderHeight()
+	availableHeight := h - headerHeight - 1
+
+	visibleRows := 0
+	currentHeight := 0
+
+	for i := d.offsets[0]; i < len(d.rows); i++ {
+		rowHeight := d.rowHeights[i] + 1 // +1 for border
+		fmt.Printf("row height: %+v\n", rowHeight)
+
+		if currentHeight+rowHeight > availableHeight {
+			break
+		}
+
+		visibleRows++
+		currentHeight += rowHeight
+	}
+	fmt.Printf("h: %+v, hh: %+v, ah: %+v, vr: %+v, ch: %+v\n", h, headerHeight, availableHeight, visibleRows, currentHeight)
+
+	return visibleRows
 }
 
 func (d *Dataviewer) drawCell(screen tcell.Screen, i, j, x, y, colWidth, height, topPadding int, content string) {
@@ -620,42 +622,42 @@ func (d *Dataviewer) InputHandler() func(event *tcell.EventKey, setFocus func(p 
 }
 
 func (d *Dataviewer) validateCursor() {
-    if d.cursor[0] < 0 {
-        d.cursor[0] = 0
-    }
-    if d.cursor[0] > len(d.rows) {
-        d.cursor[0] = len(d.rows)
-    }
-    if d.cursor[1] < 0 {
-        d.cursor[1] = 0
-    }
-    if d.cursor[1] >= len(d.headers) {
-        d.cursor[1] = len(d.headers) - 1
-    }
+	if d.cursor[0] < 0 {
+		d.cursor[0] = 0
+	}
+	if d.cursor[0] > len(d.rows) {
+		d.cursor[0] = len(d.rows)
+	}
+	if d.cursor[1] < 0 {
+		d.cursor[1] = 0
+	}
+	if d.cursor[1] >= len(d.headers) {
+		d.cursor[1] = len(d.headers) - 1
+	}
 }
 
 func (d *Dataviewer) GetUpCursor() [2]int {
-    d.cursor[0]--
-    d.validateCursor()
-    return d.cursor
+	d.cursor[0]--
+	d.validateCursor()
+	return d.cursor
 }
 
 func (d *Dataviewer) GetDownCursor() [2]int {
-    d.cursor[0]++
-    d.validateCursor()
-    return d.cursor
+	d.cursor[0]++
+	d.validateCursor()
+	return d.cursor
 }
 
 func (d *Dataviewer) GetLeftCursor() [2]int {
-    d.cursor[1]--
-    d.validateCursor()
-    return d.cursor
+	d.cursor[1]--
+	d.validateCursor()
+	return d.cursor
 }
 
 func (d *Dataviewer) GetRightCursor() [2]int {
-    d.cursor[1]++
-    d.validateCursor()
-    return d.cursor
+	d.cursor[1]++
+	d.validateCursor()
+	return d.cursor
 }
 
 func (d *Dataviewer) GetEndOfLineCursor() [2]int {
@@ -675,8 +677,8 @@ func (d *Dataviewer) GetLastLineCursor() [2]int {
 }
 
 func (d *Dataviewer) MoveCursorHalfPageUp() [2]int {
-	_, _, _, h := d.Box.GetInnerRect()
-	h-- // exclude status line
+	h := d.getVisibleRowCount() + 1
+	fmt.Printf("h: %+v\n", h)
 
 	if d.cursor[0] < 1 {
 		return d.cursor
@@ -758,21 +760,22 @@ func (d *Dataviewer) ResetAction() {
 	d.pendingCount = 0
 	d.waitingForMotion = false
 }
+
 func getBorderChar(isFirstCol, isFirstRow, isBottom, isRight bool) rune {
-    if isBottom {
-        if isFirstCol {
-            return tview.Borders.BottomLeft
-        }
-        if isRight {
-            return tview.Borders.BottomRight
-        }
-        return tview.Borders.BottomT
-    }
-    if isFirstCol {
-        return tview.Borders.LeftT
-    }
-    if isRight {
-        return tview.Borders.RightT
-    }
-    return tview.Borders.Cross
+	if isBottom {
+		if isFirstCol {
+			return tview.Borders.BottomLeft
+		}
+		if isRight {
+			return tview.Borders.BottomRight
+		}
+		return tview.Borders.BottomT
+	}
+	if isFirstCol {
+		return tview.Borders.LeftT
+	}
+	if isRight {
+		return tview.Borders.RightT
+	}
+	return tview.Borders.Cross
 }
