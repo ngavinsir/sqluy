@@ -96,13 +96,31 @@ func New(km keymapper) *Dataviewer {
 }
 
 func (d *Dataviewer) SetData(headers []string, rows []map[string]string) {
-	d.headers = headers
-	d.rows = rows
-	d.cursor = [2]int{0, 0}
-	d.offsets = [2]int{0, 0}
-	d.visibleLeft = -1
-	d.visibleRight = -1
-	clear(d.colWidths)
+    d.headers = headers
+    d.rows = rows
+    d.cursor = [2]int{0, 0}
+    d.offsets = [2]int{0, 0}
+    d.visibleLeft = -1
+    d.visibleRight = -1
+    d.rowHeights = nil // Clear cached heights
+    clear(d.colWidths)
+    
+    // Pre-calculate row heights
+    if len(rows) > 0 {
+        d.rowHeights = make([]int, len(rows))
+        for i, r := range rows {
+            maxHeight := 1
+            for _, header := range headers {
+                if v, ok := r[header]; ok {
+                    h := d.getTextHeight(fmt.Sprint(v), 80) // Use average width
+                    if h > maxHeight {
+                        maxHeight = h
+                    }
+                }
+            }
+            d.rowHeights[i] = maxHeight
+        }
+    }
 }
 
 func (d *Dataviewer) Draw(screen tcell.Screen) {
@@ -401,49 +419,23 @@ func (d *Dataviewer) drawCell(screen tcell.Screen, i, j, x, y, colWidth, height,
 	}
 	c := NewCell(content, x, y, colWidth+2, height, topPadding, textColor, bgColor, borderColor)
 	c.Draw(screen)
+	c.Release()
 
-	// top left junction
-	if j > 0 {
-		screen.SetContent(x, y, tview.Borders.Cross, nil, tcell.StyleDefault.Foreground(borderColor).Background(bgColor))
-	} else {
-		screen.SetContent(x, y, tview.Borders.LeftT, nil, tcell.StyleDefault.Foreground(borderColor).Background(bgColor))
-	}
+	// Pre-calculate border style
+	borderStyle := tcell.StyleDefault.Foreground(borderColor).Background(bgColor)
 
-	// top right junction
-	if j >= len(d.headers)-1 {
-		screen.SetContent(x+colWidth+1, y, tview.Borders.RightT, nil, tcell.StyleDefault.Foreground(borderColor).Background(bgColor))
-	} else {
-		screen.SetContent(x+colWidth+1, y, tview.Borders.Cross, nil, tcell.StyleDefault.Foreground(borderColor).Background(bgColor))
-	}
+	// Calculate border positions
+	topLeft := x
+	topRight := x + colWidth + 1
+	bottomLeft := x
+	bottomRight := x + colWidth + 1
+	bottomY := y - 1 + height + topPadding
 
-	// bottom left juction
-	if i >= len(d.rows)-1 && j > 0 {
-		screen.SetContent(x, y-1+height+topPadding, tview.Borders.BottomT, nil, tcell.StyleDefault.Foreground(borderColor).Background(bgColor))
-	} else if j > 0 {
-		screen.SetContent(x, y-1+height+topPadding, tview.Borders.Cross, nil, tcell.StyleDefault.Foreground(borderColor).Background(bgColor))
-	} else if i >= len(d.rows)-1 {
-		screen.SetContent(x, y-1+height+topPadding, tview.Borders.BottomLeft, nil, tcell.StyleDefault.Foreground(borderColor).Background(bgColor))
-	} else {
-		screen.SetContent(x, y-1+height+topPadding, tview.Borders.LeftT, nil, tcell.StyleDefault.Foreground(borderColor).Background(bgColor))
-	}
-
-	// top right junction
-	if j >= len(d.headers)-1 {
-		screen.SetContent(x+colWidth+1, y, tview.Borders.RightT, nil, tcell.StyleDefault.Foreground(borderColor).Background(bgColor))
-	} else {
-		screen.SetContent(x+colWidth+1, y, tview.Borders.Cross, nil, tcell.StyleDefault.Foreground(borderColor).Background(bgColor))
-	}
-
-	// bottom right junction
-	if i >= len(d.rows)-1 && j < len(d.headers)-1 {
-		screen.SetContent(x+colWidth+1, y-1+height+topPadding, tview.Borders.BottomT, nil, tcell.StyleDefault.Foreground(borderColor).Background(bgColor))
-	} else if j < len(d.headers)-1 {
-		screen.SetContent(x+colWidth+1, y-1+height+topPadding, tview.Borders.Cross, nil, tcell.StyleDefault.Foreground(borderColor).Background(bgColor))
-	} else if i >= len(d.rows)-1 {
-		screen.SetContent(x+colWidth+1, y-1+height+topPadding, tview.Borders.BottomRight, nil, tcell.StyleDefault.Foreground(borderColor).Background(bgColor))
-	} else {
-		screen.SetContent(x+colWidth+1, y-1+height+topPadding, tview.Borders.RightT, nil, tcell.StyleDefault.Foreground(borderColor).Background(bgColor))
-	}
+	// Draw borders
+	screen.SetContent(topLeft, y, getBorderChar(j == 0, i == 0, false, false), nil, borderStyle)
+	screen.SetContent(topRight, y, getBorderChar(j == len(d.headers)-1, i == 0, false, true), nil, borderStyle)
+	screen.SetContent(bottomLeft, bottomY, getBorderChar(j == 0, i == len(d.rows)-1, true, false), nil, borderStyle)
+	screen.SetContent(bottomRight, bottomY, getBorderChar(j == len(d.headers)-1, i == len(d.rows)-1, true, true), nil, borderStyle)
 }
 
 func (d *Dataviewer) drawHeader(screen tcell.Screen, i, x, y, colWidth, height int, header string) {
@@ -603,36 +595,43 @@ func (d *Dataviewer) InputHandler() func(event *tcell.EventKey, setFocus func(p 
 	})
 }
 
+func (d *Dataviewer) validateCursor() {
+    if d.cursor[0] < 0 {
+        d.cursor[0] = 0
+    }
+    if d.cursor[0] > len(d.rows) {
+        d.cursor[0] = len(d.rows)
+    }
+    if d.cursor[1] < 0 {
+        d.cursor[1] = 0
+    }
+    if d.cursor[1] >= len(d.headers) {
+        d.cursor[1] = len(d.headers) - 1
+    }
+}
+
 func (d *Dataviewer) GetUpCursor() [2]int {
-	res := [2]int{d.cursor[0] - 1, d.cursor[1]}
-	if res[0] < 0 {
-		return [2]int{0, d.cursor[1]}
-	}
-	return res
+    d.cursor[0]--
+    d.validateCursor()
+    return d.cursor
 }
 
 func (d *Dataviewer) GetDownCursor() [2]int {
-	res := [2]int{d.cursor[0] + 1, d.cursor[1]}
-	if res[0] > len(d.rows) {
-		return [2]int{len(d.rows), d.cursor[1]}
-	}
-	return res
+    d.cursor[0]++
+    d.validateCursor()
+    return d.cursor
 }
 
 func (d *Dataviewer) GetLeftCursor() [2]int {
-	res := [2]int{d.cursor[0], d.cursor[1] - 1}
-	if res[1] < 0 {
-		return [2]int{d.cursor[0], 0}
-	}
-	return res
+    d.cursor[1]--
+    d.validateCursor()
+    return d.cursor
 }
 
 func (d *Dataviewer) GetRightCursor() [2]int {
-	res := [2]int{d.cursor[0], d.cursor[1] + 1}
-	if res[1] > len(d.headers)-1 {
-		return [2]int{d.cursor[0], len(d.headers) - 1}
-	}
-	return res
+    d.cursor[1]++
+    d.validateCursor()
+    return d.cursor
 }
 
 func (d *Dataviewer) GetEndOfLineCursor() [2]int {
@@ -680,4 +679,22 @@ func (d *Dataviewer) ResetAction() {
 	d.pending = nil
 	d.pendingCount = 0
 	d.waitingForMotion = false
+}
+func getBorderChar(isFirstCol, isFirstRow, isBottom, isRight bool) rune {
+    if isBottom {
+        if isFirstCol {
+            return tview.Borders.BottomLeft
+        }
+        if isRight {
+            return tview.Borders.BottomRight
+        }
+        return tview.Borders.BottomT
+    }
+    if isFirstCol {
+        return tview.Borders.LeftT
+    }
+    if isRight {
+        return tview.Borders.RightT
+    }
+    return tview.Borders.Cross
 }

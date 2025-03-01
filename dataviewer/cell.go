@@ -16,17 +16,29 @@ type (
 	}
 )
 
-func NewCell(text string, x, y, w, h, topPadding int, textColor, bgColor, borderColor tcell.Color) *Cell {
-	box := tview.NewBox().SetBorder(true).SetBorderColor(borderColor).SetBackgroundColor(bgColor)
-	box.SetRect(x, y, w, h+topPadding)
+var cellPool = sync.Pool{
+    New: func() interface{} {
+        return &Cell{
+            Box: tview.NewBox(),
+        }
+    },
+}
 
-	return &Cell{
-		Box:        box,
-		text:       text,
-		textColor:  textColor,
-		bgColor:    bgColor,
-		topPadding: topPadding,
-	}
+func NewCell(text string, x, y, w, h, topPadding int, textColor, bgColor, borderColor tcell.Color) *Cell {
+    cell := cellPool.Get().(*Cell)
+    cell.Box.SetBorder(true).
+        SetBorderColor(borderColor).
+        SetBackgroundColor(bgColor).
+        SetRect(x, y, w, h+topPadding)
+    cell.text = text
+    cell.textColor = textColor
+    cell.bgColor = bgColor
+    cell.topPadding = topPadding
+    return cell
+}
+
+func (c *Cell) Release() {
+    cellPool.Put(c)
 }
 
 func (c *Cell) Draw(screen tcell.Screen) {
