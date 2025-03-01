@@ -698,15 +698,27 @@ func (d *Dataviewer) MoveCursorHalfPageDown() [2]int {
 	visibleRows := d.getVisibleRowCount()
 	fmt.Printf("visibleRows: %+v\n", visibleRows)
 
-	if d.cursor[0] >= len(d.rows)-1 {
+	// If at header, move to first row
+	if d.cursor[0] == 0 {
+		d.cursor[0] = 1
+		d.validateCursor()
+		return d.cursor
+	}
+
+	if d.cursor[0] >= len(d.rows) {
 		return d.cursor
 	}
 
 	// Calculate total height to move based on row heights
 	targetHeight := 0
 	moveHeight := 0
-	for i := d.cursor[0] + 1; i < len(d.rows); i++ {
-		rowHeight := d.rowHeights[i] + 1 // +1 for border
+	startIndex := d.cursor[0]
+	if startIndex == 0 {
+		startIndex = 1 // Skip header when calculating movement
+	}
+	
+	for i := startIndex; i < len(d.rows); i++ {
+		rowHeight := d.rowHeights[i-1] + 1 // -1 because rowHeights doesn't include header
 		if targetHeight + rowHeight > visibleRows/2 {
 			break
 		}
