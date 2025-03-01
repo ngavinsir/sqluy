@@ -106,6 +106,8 @@ var actionMapper = map[Action]string{
 	ActionPasteBefore:            "paste_before",
 	ActionMoveLastLine:           "move_last_line",
 	ActionMoveFirstLine:          "move_first_line",
+	ActionMoveHalfPageUp:         "move_half_page_up",
+	ActionMoveHalfPageDown:       "move_half_page_down",
 	ActionMoveEndOfWord:          "move_end_of_word",
 	ActionMoveStartOfWord:        "move_start_of_word",
 	ActionMoveBackStartOfWord:    "move_back_start_of_word",

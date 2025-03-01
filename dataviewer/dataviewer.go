@@ -67,6 +67,8 @@ func New(km keymapper) *Dataviewer {
 	d.motionRunner = map[Action]func() [2]int{
 		ActionMoveEndOfLine:   d.GetEndOfLineCursor,
 		ActionMoveStartOfLine: d.GetStartOfLineCursor,
+		ActionMoveHalfPageUp:   d.MoveCursorHalfPageUp,
+		ActionMoveHalfPageDown: d.MoveCursorHalfPageDown,
 		// ActionMoveFirstNonWhitespace: d.GetFirstNonWhitespaceCursor,
 		ActionMoveDown:      d.GetDownCursor,
 		ActionMoveUp:        d.GetUpCursor,
@@ -648,6 +650,60 @@ func (d *Dataviewer) GetFirstLineCursor() [2]int {
 
 func (d *Dataviewer) GetLastLineCursor() [2]int {
 	return [2]int{len(d.rows), d.cursor[1]}
+}
+
+func (d *Dataviewer) MoveCursorHalfPageUp() [2]int {
+	_, _, _, h := d.Box.GetInnerRect()
+	h-- // exclude status line
+
+	if d.cursor[0] < 1 {
+		return d.cursor
+	}
+
+	halfPageUpIdx := d.cursor[0] - h/2
+	if halfPageUpIdx < 0 {
+		halfPageUpIdx = 0
+	}
+
+	distanceFromTop := d.cursor[0] - d.offsets[0]
+	d.cursor[0] = halfPageUpIdx
+
+	newRowOffset := d.cursor[0] - distanceFromTop
+	if newRowOffset > len(d.rows)-h {
+		newRowOffset = len(d.rows) - h
+	} else if newRowOffset < 0 {
+		newRowOffset = 0
+	}
+	d.offsets[0] = newRowOffset
+
+	return d.cursor
+}
+
+func (d *Dataviewer) MoveCursorHalfPageDown() [2]int {
+	_, _, _, h := d.Box.GetInnerRect()
+	h-- // exclude status line
+
+	if d.cursor[0] >= len(d.rows)-1 {
+		return d.cursor
+	}
+
+	halfPageDownIdx := d.cursor[0] + h/2
+	if halfPageDownIdx > len(d.rows)-1 {
+		halfPageDownIdx = len(d.rows) - 1
+	}
+
+	distanceFromTop := d.cursor[0] - d.offsets[0]
+	d.cursor[0] = halfPageDownIdx
+
+	newRowOffset := d.cursor[0] - distanceFromTop
+	if newRowOffset > len(d.rows)-h {
+		newRowOffset = len(d.rows) - h
+	} else if newRowOffset < 0 {
+		newRowOffset = 0
+	}
+	d.offsets[0] = newRowOffset
+
+	return d.cursor
 }
 
 func (d *Dataviewer) MoveCursorTo(to [2]int) {
