@@ -187,24 +187,12 @@ func (d *Dataviewer) Draw(screen tcell.Screen) {
 	}
 bottomOffset:
 	for d.offsets[0] < d.cursor[0] {
-		for i, r := range d.rows[d.offsets[0]:d.cursor[0]] {
-			i += d.offsets[0]
-			// measure max text height on the row
-			textHeight := 1
-			for _, header := range d.headers {
-				v, ok := r[header]
-				if !ok {
-					continue
-				}
-				text := fmt.Sprintf("%+v", v)
-				th := d.getTextHeight(text, w-2)
-				if th > textHeight {
-					textHeight = th
-				}
-			}
+		for i := d.offsets[0]; i < d.cursor[0]; i++ {
+			// Use cached row height
+			rowHeight := d.rowHeights[i] + 1 // +1 for border
 
 			// increment row offset if current row span until below bottom offset
-			if height+textHeight+1 >= y+h {
+			if height+rowHeight >= y+h {
 				d.offsets[0]++
 				height = y + d.getHeaderHeight() + 2
 				break
@@ -215,7 +203,7 @@ bottomOffset:
 				break bottomOffset
 			}
 
-			height += textHeight + 1
+			height += rowHeight
 		}
 	}
 
@@ -227,19 +215,8 @@ bottomOffset:
 			firstRowOffset = 1
 		}
 
-		// measure max text height on the row
-		textHeight := 1
-		for _, header := range d.headers {
-			v, ok := r[header]
-			if !ok {
-				continue
-			}
-			text := fmt.Sprintf("%+v", v)
-			th := d.getTextHeight(text, w-2)
-			if th > textHeight {
-				textHeight = th
-			}
-		}
+		// Use cached row height
+		textHeight := d.rowHeights[i]
 
 		if textY+1+textHeight+firstRowOffset >= y+h {
 			break
@@ -403,15 +380,11 @@ func (d *Dataviewer) getColWidth(colIndex int) int {
 }
 
 func (d *Dataviewer) getHeaderHeight() int {
-	_, _, w, _ := d.Box.GetInnerRect()
-	textHeight := 1
-	for _, header := range d.headers {
-		th := d.getTextHeight(header, w-2)
-		if th > textHeight {
-			textHeight = th
-		}
+	// Use first row height as header height since they're calculated the same way
+	if len(d.rowHeights) > 0 {
+		return d.rowHeights[0]
 	}
-	return textHeight
+	return 1
 }
 
 func (d *Dataviewer) getVisibleRowCount() int {
