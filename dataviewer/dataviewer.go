@@ -46,6 +46,7 @@ type (
 		visibleTop       int
 		waitingForMotion bool
 		mode             mode
+		headerHeight     int
 	}
 )
 
@@ -105,6 +106,7 @@ func (d *Dataviewer) SetData(headers []string, rows []map[string]string) {
 	d.visibleLeft = -1
 	d.visibleRight = -1
 	d.rowHeights = nil // Clear cached heights
+	d.headerHeight = 0 // Clear cached header height
 	clear(d.colWidths)
 
 	// Get actual available width
@@ -380,11 +382,21 @@ func (d *Dataviewer) getColWidth(colIndex int) int {
 }
 
 func (d *Dataviewer) getHeaderHeight() int {
-	// Use first row height as header height since they're calculated the same way
-	if len(d.rowHeights) > 0 {
-		return d.rowHeights[0]
+	// Calculate header height if not cached
+	if d.headerHeight == 0 && len(d.headers) > 0 {
+		_, _, w, _ := d.Box.GetInnerRect()
+		cellWidth := w - 2 // Subtract 2 for borders
+		
+		maxHeight := 1
+		for _, header := range d.headers {
+			h := d.getTextHeight(header, cellWidth)
+			if h > maxHeight {
+				maxHeight = h
+			}
+		}
+		d.headerHeight = maxHeight
 	}
-	return 1
+	return d.headerHeight
 }
 
 func (d *Dataviewer) getVisibleRowCount() int {
