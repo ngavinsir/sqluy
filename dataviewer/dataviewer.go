@@ -386,7 +386,7 @@ func (d *Dataviewer) getHeaderHeight() int {
 	if d.headerHeight == 0 && len(d.headers) > 0 {
 		_, _, w, _ := d.Box.GetInnerRect()
 		cellWidth := w - 2 // Subtract 2 for borders
-		
+
 		maxHeight := 1
 		for _, header := range d.headers {
 			h := d.getTextHeight(header, cellWidth)
@@ -414,7 +414,7 @@ func (d *Dataviewer) getVisibleRowCount() int {
 	for i := d.offsets[0]; i < len(d.rows); i++ {
 		rowHeight := d.rowHeights[i] + 1 // +1 for border
 
-		if currentHeight + rowHeight > availableHeight {
+		if currentHeight+rowHeight > availableHeight {
 			break
 		}
 
@@ -669,7 +669,6 @@ func (d *Dataviewer) GetLastLineCursor() [2]int {
 
 func (d *Dataviewer) MoveCursorHalfPageUp() [2]int {
 	h := d.getVisibleRowCount() + 1
-	fmt.Printf("h: %+v\n", h)
 
 	if d.cursor[0] < 1 {
 		return d.cursor
@@ -684,8 +683,8 @@ func (d *Dataviewer) MoveCursorHalfPageUp() [2]int {
 	d.cursor[0] = halfPageUpIdx
 
 	newRowOffset := d.cursor[0] - distanceFromTop
-	if newRowOffset > len(d.rows)-h {
-		newRowOffset = len(d.rows) - h
+	if newRowOffset > len(d.rows)+1-h {
+		newRowOffset = len(d.rows) + 1 - h
 	} else if newRowOffset < 0 {
 		newRowOffset = 0
 	}
@@ -695,43 +694,28 @@ func (d *Dataviewer) MoveCursorHalfPageUp() [2]int {
 }
 
 func (d *Dataviewer) MoveCursorHalfPageDown() [2]int {
-	visibleRows := d.getVisibleRowCount()
-	fmt.Printf("visibleRows: %+v\n", visibleRows)
+	h := d.getVisibleRowCount() + 1
 
 	if d.cursor[0] >= len(d.rows) {
 		return d.cursor
 	}
 
-	// Calculate total height to move based on row heights
-	targetHeight := 0
-	moveHeight := 0
-	startIndex := d.cursor[0]
-	
-	// If at header, include header height in calculation
-	if d.cursor[0] == 0 {
-		targetHeight += d.getHeaderHeight() + 1 // +1 for border
-		startIndex = 1
+	halfPageDownIdx := d.cursor[0] + h/2
+	if halfPageDownIdx >= len(d.rows) {
+		halfPageDownIdx = len(d.rows)
 	}
 
-	for i := startIndex; i < len(d.rows); i++ {
-		rowHeight := d.rowHeights[i-1] + 1 // -1 because rowHeights doesn't include header
-		if targetHeight + rowHeight > visibleRows/2 {
-			break
-		}
-		targetHeight += rowHeight
-		moveHeight++
+	distanceFromTop := d.cursor[0] - d.offsets[0]
+	d.cursor[0] = halfPageDownIdx
+
+	newRowOffset := d.cursor[0] - distanceFromTop
+	if newRowOffset > len(d.rows)+1-h {
+		newRowOffset = len(d.rows) + 1 - h
+	} else if newRowOffset < 0 {
+		newRowOffset = 0
 	}
+	d.offsets[0] = newRowOffset
 
-	fmt.Printf("moving down %d rows (height: %d)\n", moveHeight, targetHeight)
-	d.cursor[0] += moveHeight
-	d.validateCursor()
-
-	// Adjust offset to keep cursor visible
-	if d.cursor[0] >= d.offsets[0] + visibleRows {
-		d.offsets[0] = d.cursor[0] - visibleRows + 1
-	}
-
-	fmt.Printf("new cursor: %+v, new offset: %+v\n", d.cursor, d.offsets)
 	return d.cursor
 }
 

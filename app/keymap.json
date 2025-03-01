@@ -24,6 +24,26 @@
       },
       {
         "keys": [
+          "ctrl+u"
+        ],
+        "groups": [
+          "r",
+          "h"
+        ],
+        "action": "move_half_page_up"
+      },
+      {
+        "keys": [
+          "ctrl+d"
+        ],
+        "groups": [
+          "r",
+          "h"
+        ],
+        "action": "move_half_page_down"
+      },
+      {
+        "keys": [
           [
             "down"
           ],

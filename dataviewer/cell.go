@@ -1,6 +1,8 @@
 package dataviewer
 
 import (
+	"sync"
+
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
 	"github.com/rivo/uniseg"
@@ -17,28 +19,28 @@ type (
 )
 
 var cellPool = sync.Pool{
-    New: func() interface{} {
-        return &Cell{
-            Box: tview.NewBox(),
-        }
-    },
+	New: func() interface{} {
+		return &Cell{
+			Box: tview.NewBox(),
+		}
+	},
 }
 
 func NewCell(text string, x, y, w, h, topPadding int, textColor, bgColor, borderColor tcell.Color) *Cell {
-    cell := cellPool.Get().(*Cell)
-    cell.Box.SetBorder(true).
-        SetBorderColor(borderColor).
-        SetBackgroundColor(bgColor).
-        SetRect(x, y, w, h+topPadding)
-    cell.text = text
-    cell.textColor = textColor
-    cell.bgColor = bgColor
-    cell.topPadding = topPadding
-    return cell
+	cell := cellPool.Get().(*Cell)
+	cell.Box.SetBorder(true).
+		SetBorderColor(borderColor).
+		SetBackgroundColor(bgColor).
+		SetRect(x, y, w, h+topPadding)
+	cell.text = text
+	cell.textColor = textColor
+	cell.bgColor = bgColor
+	cell.topPadding = topPadding
+	return cell
 }
 
 func (c *Cell) Release() {
-    cellPool.Put(c)
+	cellPool.Put(c)
 }
 
 func (c *Cell) Draw(screen tcell.Screen) {

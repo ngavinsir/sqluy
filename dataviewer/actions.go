@@ -65,14 +65,25 @@ const (
 	ActionYank
 )
 
-var OperatorActions = []Action{ActionChange, ActionDelete, ActionYank, ActionVisual}
-var MotionActions = []Action{ActionMoveLeft, ActionMoveRight, ActionMoveUp, ActionMoveDown, ActionMoveEndOfLine, ActionMoveStartOfLine, ActionMoveFirstNonWhitespace, ActionFlash,
-	ActionMoveLastLine, ActionMoveFirstLine, ActionMoveEndOfWord, ActionMoveStartOfWord, ActionMoveBackStartOfWord, ActionMoveBackEndOfWord, ActionEnableSearch, ActionTil,
-	ActionTilBack, ActionFind, ActionFindBack, ActionInside, ActionAround, ActionMoveStartOfBigWord, ActionMoveBackStartOfBigWord, ActionMoveEndOfBigWord, ActionMoveBackEndOfBigWord}
-var CountlessMotionActions = []Action{ActionMoveStartOfLine}
-var OperatorlessMotionActions = []Action{ActionMoveLeft, ActionMoveRight, ActionMoveUp, ActionMoveDown, ActionMoveEndOfLine, ActionMoveStartOfLine, ActionMoveFirstNonWhitespace,
-	ActionMoveLastLine, ActionMoveFirstLine, ActionMoveEndOfWord, ActionMoveStartOfWord, ActionMoveBackStartOfWord, ActionMoveBackEndOfWord, ActionEnableSearch, ActionTil,
-	ActionTilBack, ActionFind, ActionFindBack, ActionMoveStartOfBigWord, ActionMoveBackStartOfBigWord, ActionMoveEndOfBigWord, ActionMoveBackEndOfBigWord, ActionFlash}
+var (
+	OperatorActions = []Action{ActionChange, ActionDelete, ActionYank, ActionVisual}
+	MotionActions   = []Action{
+		ActionMoveLeft, ActionMoveRight, ActionMoveUp, ActionMoveDown, ActionMoveEndOfLine, ActionMoveStartOfLine, ActionMoveFirstNonWhitespace, ActionFlash,
+		ActionMoveLastLine, ActionMoveFirstLine, ActionMoveEndOfWord, ActionMoveStartOfWord, ActionMoveBackStartOfWord, ActionMoveBackEndOfWord, ActionEnableSearch, ActionTil,
+		ActionTilBack, ActionFind, ActionFindBack, ActionInside, ActionAround, ActionMoveStartOfBigWord, ActionMoveBackStartOfBigWord, ActionMoveEndOfBigWord, ActionMoveBackEndOfBigWord,
+		ActionMoveHalfPageUp, ActionMoveHalfPageDown,
+	}
+)
+
+var (
+	CountlessMotionActions    = []Action{ActionMoveStartOfLine}
+	OperatorlessMotionActions = []Action{
+		ActionMoveLeft, ActionMoveRight, ActionMoveUp, ActionMoveDown, ActionMoveEndOfLine, ActionMoveStartOfLine, ActionMoveFirstNonWhitespace,
+		ActionMoveLastLine, ActionMoveFirstLine, ActionMoveEndOfWord, ActionMoveStartOfWord, ActionMoveBackStartOfWord, ActionMoveBackEndOfWord, ActionEnableSearch, ActionTil,
+		ActionTilBack, ActionFind, ActionFindBack, ActionMoveStartOfBigWord, ActionMoveBackStartOfBigWord, ActionMoveEndOfBigWord, ActionMoveBackEndOfBigWord, ActionFlash,
+		ActionMoveHalfPageUp, ActionMoveHalfPageDown,
+	}
+)
 var WaitingForRuneActions = []Action{ActionTil, ActionTilBack, ActionFind, ActionFindBack, ActionInside, ActionAround}
 
 var actionMapper = map[Action]string{
@@ -106,8 +117,6 @@ var actionMapper = map[Action]string{
 	ActionPasteBefore:            "paste_before",
 	ActionMoveLastLine:           "move_last_line",
 	ActionMoveFirstLine:          "move_first_line",
-	ActionMoveHalfPageUp:         "move_half_page_up",
-	ActionMoveHalfPageDown:       "move_half_page_down",
 	ActionMoveEndOfWord:          "move_end_of_word",
 	ActionMoveStartOfWord:        "move_start_of_word",
 	ActionMoveBackStartOfWord:    "move_back_start_of_word",
@@ -133,8 +142,11 @@ var actionMapper = map[Action]string{
 	ActionDelete:                 "delete",
 	ActionYank:                   "yank",
 }
-var reverseActionMapper map[string]Action
-var reverseActionMapperOnce sync.Once
+
+var (
+	reverseActionMapper     map[string]Action
+	reverseActionMapperOnce sync.Once
+)
 
 func (a Action) String() string {
 	if actionMapper[a] != "" {
