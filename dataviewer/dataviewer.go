@@ -107,14 +107,18 @@ func (d *Dataviewer) SetData(headers []string, rows []map[string]string) {
 	d.rowHeights = nil // Clear cached heights
 	clear(d.colWidths)
 
-	// Pre-calculate row heights
+	// Get actual available width
+	_, _, w, _ := d.Box.GetInnerRect()
+	cellWidth := w - 2 // Subtract 2 for borders
+
+	// Pre-calculate row heights using correct width
 	if len(rows) > 0 {
 		d.rowHeights = make([]int, len(rows))
 		for i, r := range rows {
 			maxHeight := 1
 			for _, header := range headers {
 				if v, ok := r[header]; ok {
-					h := d.getTextHeight(fmt.Sprint(v), 80) // Use average width
+					h := d.getTextHeight(fmt.Sprint(v), cellWidth)
 					if h > maxHeight {
 						maxHeight = h
 					}
@@ -411,6 +415,10 @@ func (d *Dataviewer) getHeaderHeight() int {
 }
 
 func (d *Dataviewer) getVisibleRowCount() int {
+	if d.rowHeights == nil {
+		return 0
+	}
+
 	_, _, _, h := d.Box.GetInnerRect()
 	headerHeight := d.getHeaderHeight()
 	availableHeight := h - headerHeight - 1
@@ -420,16 +428,14 @@ func (d *Dataviewer) getVisibleRowCount() int {
 
 	for i := d.offsets[0]; i < len(d.rows); i++ {
 		rowHeight := d.rowHeights[i] + 1 // +1 for border
-		fmt.Printf("row height: %+v\n", rowHeight)
 
-		if currentHeight+rowHeight > availableHeight {
+		if currentHeight + rowHeight > availableHeight {
 			break
 		}
 
 		visibleRows++
 		currentHeight += rowHeight
 	}
-	fmt.Printf("h: %+v, hh: %+v, ah: %+v, vr: %+v, ch: %+v\n", h, headerHeight, availableHeight, visibleRows, currentHeight)
 
 	return visibleRows
 }
